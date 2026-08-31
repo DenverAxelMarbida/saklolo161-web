@@ -26,9 +26,30 @@ export const getWeatherRiver = async () => {
   };
 };
 
+// The backend serializes incidents in its own field casing/shape, but the
+// UI was built against the mock-data shape (see data/mockIncidents.js).
+// This normalizes every API incident into that expected shape so the map,
+// queue, and tally all stay in sync regardless of backend schema changes.
+const normalizeIncident = (i) => ({
+  id: i.incidentId ?? i.id,
+  category: (i.category || "").toUpperCase(),
+  status: (i.status || "PENDING").toUpperCase(),
+  priority: i.priority || "MEDIUM",
+  location: i.location?.address ?? i.location ?? "Unknown location",
+  coords: {
+    lat: i.location?.latitude ?? i.lat ?? 0,
+    lng: i.location?.longitude ?? i.lng ?? 0,
+  },
+  elapsedMinutes: i.elapsedMinutes ?? 0,
+  callerNotes: i.notes ?? i.callerNotes ?? "",
+  evidence: i.evidence ?? [],
+});
+
 export const getIncidents = async () => {
   const response = await api.get("/api/incidents");
-  return response.data;
+  const d = response.data?.data ?? response.data;
+  if (!Array.isArray(d)) return [];
+  return d.map(normalizeIncident);
 };
 
 export const dispatchIncident = async ({

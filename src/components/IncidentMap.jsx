@@ -30,13 +30,7 @@ export default function IncidentMap({ incidents, onSelectIncident }) {
       el.style.borderRadius = "50%";
       el.style.border = "2px solid white";
       el.style.cursor = "pointer";
-      // CATEGORIES stores colors as "var(--color-fire)" so they can be used
-      // directly in JSX/CSS elsewhere; a plain DOM element's inline style
-      // needs the resolved hex, so we read the custom property off <html>.
-      const varName = CATEGORIES[incident.category]?.color.slice(4, -1) || "--color-crime";
-      el.style.backgroundColor = getComputedStyle(document.documentElement)
-        .getPropertyValue(varName)
-        .trim();
+      el.style.backgroundColor = CATEGORIES[incident.category]?.color || "#334155";
 
       el.addEventListener("click", () => onSelectIncident(incident));
 
