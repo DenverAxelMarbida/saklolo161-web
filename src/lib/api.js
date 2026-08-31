@@ -1,26 +1,39 @@
+import axios from "axios";
 import { API_BASE_URL } from "./config";
 
-async function request(path, options = {}) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+export const getWeatherRiver = async () => {
+  const response = await api.get("/api/weather-river");
+  return response.data;
+};
+
+export const getIncidents = async () => {
+  const response = await api.get("/api/incidents");
+  return response.data;
+};
+
+export const dispatchIncident = async ({
+  incidentId,
+  stationId,
+  assignedUnit,
+}) => {
+  const response = await api.post("/api/incidents/dispatch", {
+    incidentId,
+    stationId,
+    assignedUnit,
   });
-  if (!res.ok) {
-    throw new Error(`${options.method || "GET"} ${path} failed: ${res.status}`);
-  }
-  // 204 No Content has no body to parse.
-  return res.status === 204 ? null : res.json();
-}
 
-export const getWeatherRiver = () => request("/api/weather-river");
+  return response.data;
+};
 
-export const getIncidents = () => request("/api/incidents");
+export const resolveIncident = async (incidentId) => {
+  const response = await api.post(`/api/incidents/${incidentId}/resolve`);
 
-export const dispatchIncident = ({ incidentId, stationId, assignedUnit }) =>
-  request("/api/incidents/dispatch", {
-    method: "POST",
-    body: JSON.stringify({ incidentId, stationId, assignedUnit }),
-  });
-
-export const resolveIncident = (incidentId) =>
-  request(`/api/incidents/${incidentId}/resolve`, { method: "POST" });
+  return response.data;
+};
