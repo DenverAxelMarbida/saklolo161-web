@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+/*
+  Tailwind v4 lets us define design tokens directly in CSS with @theme,
+  instead of a separate tailwind.config.js. Anything declared here becomes
+  a usable utility, e.g. --color-header becomes `bg-header` / `text-header`.
+*/
+@theme {
+  /* Brand / chrome */
+  --color-header: #111a3a;
+  --color-bg: #0b1120;
+  --color-panel: #131c34;
+  --color-panel-hover: #182246;
+  --color-border: #232f52;
+
+  /* Text */
+  --color-ink: #e7ebf5;
+  --color-ink-dim: #8b93ac;
+
+  /* Category accents (used consistently across tally, markers, badges) */
+  --color-medical: #2f80ed;
+  --color-fire: #e4572e;
+  --color-flood: #17a2b8;
+  --color-crime: #8b5cf6;
+
+  /* Status */
+  --color-risk-low: #2ecc71;
+  --color-risk-mid: #f4b400;
+  --color-risk-high: #e4572e;
+  --color-priority-high: #e4572e;
+  --color-resolved: #2ecc71;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* Mapbox injects its own stylesheet for controls; this keeps our map
+   containers from collapsing to 0 height, since Tailwind's preflight
+   resets default element sizing. */
+.mapboxgl-map {
+  height: 100%;
+  width: 100%;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 4px;
+}
