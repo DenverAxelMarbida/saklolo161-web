@@ -1,6 +1,6 @@
 # Saklolo161 — Project Context
 
-Emergency response system for Marikina City, PH ("RESCUE 161"). This file
+Emergency response system for Marikina City, PH ("SAKLOLO 161"). This file
 orients any AI coding agent (opencode, Claude Code, etc.) working across
 the backend, mobile, and web repos.
 

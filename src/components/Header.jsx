@@ -4,7 +4,7 @@ export default function Header({ dutyOfficer = "Officer C. Reyes" }) {
       <div className="flex items-center gap-2">
         <span className="font-semibold tracking-tight">Marikina City MDRRMO</span>
         <span className="text-ink-dim">/</span>
-        <span className="font-mono text-sm text-ink-dim">RESCUE 161</span>
+        <span className="font-mono text-sm text-ink-dim">SAKLOLO 161</span>
       </div>
 
       <div className="hidden max-w-md flex-1 px-6 md:block">
