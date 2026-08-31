@@ -67,7 +67,9 @@ export const dispatchIncident = async ({
 };
 
 export const resolveIncident = async (incidentId) => {
-  const response = await api.post(`/api/incidents/${incidentId}/resolve`);
+  const response = await api.patch(`/api/incidents/${incidentId}/status`, {
+    status: "Resolved",
+  });
 
   return response.data;
 };

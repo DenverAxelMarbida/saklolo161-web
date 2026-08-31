@@ -22,24 +22,26 @@ export default function IncidentMap({ incidents, onSelectIncident }) {
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = [];
 
-    incidents.forEach((incident) => {
-      const el = document.createElement("button");
-      el.setAttribute("aria-label", `${incident.category} incident ${incident.id}`);
-      el.style.width = "22px";
-      el.style.height = "22px";
-      el.style.borderRadius = "50%";
-      el.style.border = "2px solid white";
-      el.style.cursor = "pointer";
-      el.style.backgroundColor = CATEGORIES[incident.category]?.color || "#334155";
+    incidents
+      .filter((i) => i.status !== "RESOLVED")
+      .forEach((incident) => {
+        const el = document.createElement("button");
+        el.setAttribute("aria-label", `${incident.category} incident ${incident.id}`);
+        el.style.width = "22px";
+        el.style.height = "22px";
+        el.style.borderRadius = "50%";
+        el.style.border = "2px solid white";
+        el.style.cursor = "pointer";
+        el.style.backgroundColor = CATEGORIES[incident.category]?.color || "#334155";
 
-      el.addEventListener("click", () => onSelectIncident(incident));
+        el.addEventListener("click", () => onSelectIncident(incident));
 
-      const marker = new mapboxgl.Marker({ element: el })
-        .setLngLat([incident.coords.lng, incident.coords.lat])
-        .addTo(map);
+        const marker = new mapboxgl.Marker({ element: el })
+          .setLngLat([incident.coords.lng, incident.coords.lat])
+          .addTo(map);
 
-      markersRef.current.push(marker);
-    });
+        markersRef.current.push(marker);
+      });
 
     // No cleanup returned here on purpose: cleanup for THIS effect's
     // markers happens at the top of the next run, and final cleanup on
