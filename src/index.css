@@ -24,11 +24,11 @@
   --color-crime: #8b5cf6;
 
   /* Status */
-  --color-risk-low: #2ecc71;
+  --color-risk-low: #10b981;
   --color-risk-mid: #f4b400;
   --color-risk-high: #e4572e;
   --color-priority-high: #e4572e;
-  --color-resolved: #2ecc71;
+  --color-resolved: #10b981;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;

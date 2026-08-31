@@ -12,7 +12,7 @@ export const MARIKINA_CENTER = { lat: 14.6507, lng: 121.1029 };
 export const CATEGORIES = {
   MEDICAL: {
     label: "MEDICAL",
-    color: "var(--color-medical)",
+    color: "#F97316", // was #2F80ED
     stations: [
       { id: "mdrrmo-main", name: "MDRRMO Main" },
       { id: "armmc", name: "Amang Rodriguez Memorial Medical Center" },
@@ -20,7 +20,7 @@ export const CATEGORIES = {
   },
   FIRE: {
     label: "FIRE",
-    color: "var(--color-fire)",
+    color: "#EF4444", // was #E4572E
     stations: [
       { id: "bfp-main", name: "BFP Main" },
       { id: "bfp-station-2", name: "BFP Station 2" },
@@ -28,12 +28,12 @@ export const CATEGORIES = {
   },
   FLOOD: {
     label: "FLOOD",
-    color: "var(--color-flood)",
+    color: "#3B82F6", // was #17A2B8
     stations: [{ id: "river-command", name: "River Command" }],
   },
   CRIME: {
     label: "CRIME",
-    color: "var(--color-crime)",
+    color: "#334155", // was #8B5CF6
     stations: [
       { id: "pnp-hq", name: "PNP HQ" },
       { id: "pnp-sub-station", name: "PNP Sub-Station" },
