@@ -1,5 +1,6 @@
 import axios from "axios";
 import { API_BASE_URL } from "./config";
+import { getStoredAuth, logout } from "./auth";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -7,6 +8,36 @@ const api = axios.create({
     "Content-Type": "application/json",
   },
 });
+
+// Attach the stored JWT (if any) to every request. The dispatcher's
+// protected endpoints (GET /api/incidents, dispatch, status updates)
+// require a `Bearer <token>` Authorization header; signed-out calls
+// (e.g. the citizen-facing mobile paths) simply go out without one.
+api.interceptors.request.use((config) => {
+  const auth = getStoredAuth();
+  if (auth?.token) {
+    config.headers.Authorization = `Bearer ${auth.token}`;
+  }
+  return config;
+});
+
+// The backend's protected routes return 401 when the token is missing,
+// invalid, or expired. Rather than let the dispatcher land on a
+// silently-failing screen (e.g. an empty incident queue), treat any 401
+// as "logged out". logout() clears localStorage and notifies the
+// onAuthChange subscription, which flips App's authState to null and
+// re-renders Login. It does NOT reload — an unauthorized poll request
+// would otherwise deadlock the app in an endless reload loop (the poll
+// keeps hitting the protected endpoint, gets 401, reloads, repeats).
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      logout();
+    }
+    return Promise.reject(error);
+  },
+);
 
 export const getWeatherRiver = async () => {
   const response = await api.get("/api/weather-river");
@@ -66,10 +97,21 @@ export const dispatchIncident = async ({
   return response.data;
 };
 
-export const resolveIncident = async (incidentId) => {
+// The backend's PATCH /api/incidents/:id/status endpoint accepts any
+// status value in VALID_STATUSES (Pending/Dispatched/En Route/Resolved)
+// via a single generic handler — so all status transitions go through
+// this one function. resolveIncident/markEnRoute are thin, named
+// wrappers over it for call-site readability.
+export const updateIncidentStatus = async (incidentId, status) => {
   const response = await api.patch(`/api/incidents/${incidentId}/status`, {
-    status: "Resolved",
+    status,
   });
 
   return response.data;
 };
+
+export const resolveIncident = (incidentId) =>
+  updateIncidentStatus(incidentId, "Resolved");
+
+export const markEnRoute = (incidentId) =>
+  updateIncidentStatus(incidentId, "En Route");

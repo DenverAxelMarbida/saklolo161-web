@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { CATEGORIES, CATEGORY_KEYS } from "../lib/config";
 
 const FILTERS = ["ALL", ...CATEGORY_KEYS];
@@ -9,13 +9,12 @@ const STATUS_STYLES = {
   "EN ROUTE": "text-risk-mid border-risk-mid/40",
 };
 
-export default function ActiveQueue({ incidents, onSelectIncident }) {
-  // The filter choice is UI-only state — it doesn't change what data we
-  // have, only what subset of it we're currently looking at. That's the
-  // signal it belongs in local useState rather than being threaded down
-  // from a parent or baked into the fetch itself.
-  const [activeFilter, setActiveFilter] = useState("ALL");
-
+export default function ActiveQueue({
+  incidents,
+  onSelectIncident,
+  activeFilter,
+  onFilterChange,
+}) {
   const pending = useMemo(
     () => incidents.filter((i) => i.status !== "RESOLVED"),
     [incidents],
@@ -43,7 +42,7 @@ export default function ActiveQueue({ incidents, onSelectIncident }) {
         {FILTERS.map((filter) => (
           <button
             key={filter}
-            onClick={() => setActiveFilter(filter)}
+            onClick={() => onFilterChange(filter)}
             className={`rounded-full border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors ${
               activeFilter === filter
                 ? "border-transparent bg-ink text-bg"
