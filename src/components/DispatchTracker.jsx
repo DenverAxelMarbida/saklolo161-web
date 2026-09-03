@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CATEGORIES } from "../lib/config";
-import { resolveIncident } from "../lib/api";
+import { resolveIncident, markEnRoute } from "../lib/api";
 import RouteMap from "./RouteMap";
 
 const STEPS = ["Pending", "Dispatched", "En Route", "Resolved"];
@@ -9,10 +9,21 @@ const STEPS = ["Pending", "Dispatched", "En Route", "Resolved"];
 // this from the station record returned by the backend.
 const STATION_COORDS = { lat: 14.6455, lng: 121.101 };
 
-export default function DispatchTracker({ incident, onClose, onResolved }) {
+export default function DispatchTracker({ incident, onClose, onResolved, onStatusUpdated }) {
   const category = CATEGORIES[incident.category];
-  const [currentStepIndex, setCurrentStepIndex] = useState(2); // demo: arrives already "En Route"
+
+  // The stepper reflects the incident's REAL status field — never a
+  // locally-guessed or hardcoded step index. Fall back to 0 if the
+  // status doesn't match a known step (defensive; shouldn't happen).
+  const currentStepIndex = (() => {
+    const idx = STEPS.findIndex(
+      (step) => step.toUpperCase() === (incident.status || "").toUpperCase(),
+    );
+    return idx >= 0 ? idx : 0;
+  })();
+
   const [resolving, setResolving] = useState(false);
+  const [markingEnRoute, setMarkingEnRoute] = useState(false);
 
   const handleResolve = async () => {
     setResolving(true);
@@ -23,9 +34,21 @@ export default function DispatchTracker({ incident, onClose, onResolved }) {
       // locally and let the next poll reconcile — a dispatcher shouldn't
       // be blocked from marking something resolved by a flaky request.
     } finally {
-      setCurrentStepIndex(3);
       setResolving(false);
       onResolved(incident.id);
+    }
+  };
+
+  const handleMarkEnRoute = async () => {
+    setMarkingEnRoute(true);
+    try {
+      await markEnRoute(incident.id);
+    } catch {
+      // Same UX choice as resolve: reflect the dispatcher's intent
+      // locally and let the next poll reconcile.
+    } finally {
+      setMarkingEnRoute(false);
+      onStatusUpdated(incident.id, "En Route");
     }
   };
 
@@ -73,7 +96,7 @@ export default function DispatchTracker({ incident, onClose, onResolved }) {
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">Status</div>
             <div className="font-mono text-lg font-semibold" style={{ color: category.color }}>
-              EN ROUTE
+              {incident.status}
             </div>
           </div>
           <div>
@@ -82,7 +105,18 @@ export default function DispatchTracker({ incident, onClose, onResolved }) {
           </div>
         </div>
 
-        <div className="p-4 pt-0">
+        <div className="space-y-3 p-4 pt-0">
+          {incident.status === "DISPATCHED" && (
+            <button
+              onClick={handleMarkEnRoute}
+              disabled={markingEnRoute}
+              className="w-full rounded-md py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-60"
+              style={{ backgroundColor: category.color }}
+            >
+              {markingEnRoute ? "Marking En Route…" : "MARK EN ROUTE"}
+            </button>
+          )}
+
           <button
             onClick={handleResolve}
             disabled={resolving || currentStepIndex === 3}
