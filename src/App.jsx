@@ -66,7 +66,9 @@ export default function App() {
   // "EN ROUTE" — so branch on "at or past Dispatched" instead.
   const isDispatchedFlow =
     selectedIncident != null &&
-    ["DISPATCHED", "EN ROUTE"].includes(selectedIncident.status);
+    ["DISPATCHED", "EN ROUTE"].includes(
+      (selectedIncident.status || "").toUpperCase(),
+    );
 
   return (
     <div className="flex h-screen flex-col">
