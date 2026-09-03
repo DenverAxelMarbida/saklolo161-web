@@ -62,3 +62,78 @@ body {
   background-color: var(--color-border);
   border-radius: 4px;
 }
+
+/* ------------------------------------------------------------------
+   Subtle micro-animations — status-transition feedback for the live
+   dispatch tracker (stepper pulse, status pop, button swap-in).
+   CSS-only, dependency-free. Guarded behind a media query so users who
+   prefer reduced motion get a static (still-fully-functional) UI.
+   ------------------------------------------------------------------ */
+
+@keyframes sak-step-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes sak-pop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes sak-slide-up {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sak-button-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+  }
+}
+
+.animate-step-pulse {
+  animation: sak-step-pulse 1s ease-out 1;
+}
+.animate-pop-in {
+  animation: sak-pop-in 0.4s ease-out 1;
+}
+.animate-slide-up {
+  animation: sak-slide-up 0.35s ease-out 1;
+}
+.animate-button-flash {
+  animation: sak-button-flash 0.6s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-step-pulse,
+  .animate-pop-in,
+  .animate-slide-up,
+  .animate-button-flash {
+    animation: none;
+  }
+}

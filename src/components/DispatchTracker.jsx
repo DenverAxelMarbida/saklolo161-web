@@ -72,7 +72,7 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
               <div
                 className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
                   i <= currentStepIndex ? "bg-risk-low text-bg" : "border border-border text-ink-dim"
-                }`}
+                } ${i === currentStepIndex ? "animate-step-pulse" : ""}`}
               >
                 {i < currentStepIndex ? "✓" : i + 1}
               </div>
@@ -95,7 +95,11 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">Status</div>
-            <div className="font-mono text-lg font-semibold" style={{ color: category.color }}>
+            <div
+              key={incident.status}
+              className="animate-pop-in font-mono text-lg font-semibold"
+              style={{ color: category.color }}
+            >
               {incident.status}
             </div>
           </div>
@@ -105,25 +109,27 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
           </div>
         </div>
 
-        <div className="space-y-3 p-4 pt-0">
+        <div key={incident.status} className="animate-slide-up p-4 pt-0">
           {incident.status === "DISPATCHED" && (
             <button
               onClick={handleMarkEnRoute}
               disabled={markingEnRoute}
-              className="w-full rounded-md py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-60"
-              style={{ backgroundColor: category.color }}
+              className="w-full rounded-md py-3 text-sm font-semibold transition-opacity active:scale-[0.98] disabled:opacity-60"
+              style={{ backgroundColor: "#F59E0B", color: "#111A3A" }}
             >
               {markingEnRoute ? "Marking En Route…" : "MARK EN ROUTE"}
             </button>
           )}
 
-          <button
-            onClick={handleResolve}
-            disabled={resolving || currentStepIndex === 3}
-            className="w-full rounded-md bg-risk-low py-3 text-sm font-semibold text-bg transition-opacity disabled:opacity-60"
-          >
-            {currentStepIndex === 3 ? "RESOLVED" : resolving ? "Marking Resolved…" : "MARK RESOLVED"}
-          </button>
+          {incident.status.toUpperCase() === "EN ROUTE" && (
+            <button
+              onClick={handleResolve}
+              disabled={resolving}
+              className="animate-button-flash w-full rounded-md bg-risk-low py-3 text-sm font-semibold text-bg transition-opacity active:scale-[0.98] disabled:opacity-60"
+            >
+              {resolving ? "Marking Resolved…" : "MARK RESOLVED"}
+            </button>
+          )}
         </div>
       </div>
     </div>
