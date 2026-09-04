@@ -71,7 +71,12 @@ const normalizeIncident = (i) => ({
     lat: i.location?.latitude ?? i.lat ?? 0,
     lng: i.location?.longitude ?? i.lng ?? 0,
   },
-  elapsedMinutes: i.elapsedMinutes ?? 0,
+  elapsedMinutes:
+    typeof i.elapsedMinutes === "number"
+      ? i.elapsedMinutes
+      : i.timestamp
+      ? Math.max(0, Math.floor((Date.now() - new Date(i.timestamp).getTime()) / 60000))
+      : 0,
   callerNotes: i.notes ?? i.callerNotes ?? "",
   evidence: i.evidence ?? [],
   dispatch: i.dispatch || null,

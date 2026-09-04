@@ -105,7 +105,9 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">ETA</div>
-            <div className="font-mono text-lg font-semibold">7 MIN</div>
+            <div className="font-mono text-lg font-semibold">
+              {incident.dispatch?.estimatedTurnout ?? "—"}
+            </div>
           </div>
         </div>
 
