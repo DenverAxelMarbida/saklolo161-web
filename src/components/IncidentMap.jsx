@@ -3,6 +3,34 @@ import mapboxgl from "mapbox-gl";
 import { useMapboxMap } from "../hooks/useMapboxMap";
 import { CATEGORIES } from "../lib/config";
 
+const CATEGORY_LABELS = Object.fromEntries(
+  Object.entries(CATEGORIES).map(([key, c]) => [key, c.label]),
+);
+
+function escapeHtml(str = "") {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function tooltipHTML(incident) {
+  const label = CATEGORY_LABELS[incident.category] || incident.category || "UNKNOWN";
+  const color = CATEGORIES[incident.category]?.color || "#334155";
+  const elapsed = incident.elapsedMinutes ?? 0;
+
+  return `
+    <div class="sak-tooltip">
+      <span class="sak-tooltip-cat" style="background:${color}">${escapeHtml(label)}</span>
+      <span class="sak-tooltip-status">${escapeHtml(incident.status || "")}</span>
+      <div class="sak-tooltip-row">Priority: <b>${escapeHtml(incident.priority || "")}</b></div>
+      <div class="sak-tooltip-loc">${escapeHtml(incident.location || "Unknown location")}</div>
+      <div class="sak-tooltip-elapsed">${elapsed} min ago</div>
+    </div>
+  `;
+}
+
 export default function IncidentMap({ incidents, onSelectIncident, activeFilter }) {
   const { containerRef, mapRef } = useMapboxMap({ zoom: 12.5 });
 
@@ -37,9 +65,24 @@ export default function IncidentMap({ incidents, onSelectIncident, activeFilter 
 
         el.addEventListener("click", () => onSelectIncident(incident));
 
+        const popup = new mapboxgl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          closeOnMove: false,
+          offset: 12,
+          className: "sak-tooltip-popup",
+        }).setHTML(tooltipHTML(incident));
+
+        el.addEventListener("mouseenter", () => {
+          popup.setLngLat([incident.coords.lng, incident.coords.lat]).addTo(map);
+        });
+        el.addEventListener("mouseleave", () => popup.remove());
+
         const marker = new mapboxgl.Marker({ element: el })
           .setLngLat([incident.coords.lng, incident.coords.lat])
           .addTo(map);
+
+        marker._sakPopup = popup;
 
         markersRef.current.push(marker);
       });

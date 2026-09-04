@@ -74,6 +74,8 @@ const normalizeIncident = (i) => ({
   elapsedMinutes: i.elapsedMinutes ?? 0,
   callerNotes: i.notes ?? i.callerNotes ?? "",
   evidence: i.evidence ?? [],
+  dispatch: i.dispatch || null,
+  resolvedAt: i.resolvedAt ?? null,
 });
 
 export const getIncidents = async () => {
