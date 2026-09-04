@@ -52,7 +52,9 @@ export default function ControlRoom({ incidents, onSelectIncident, initialAgency
               onClick={() => setQueueView(tab.key)}
               className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold transition-colors ${
                 queueView === tab.key
-                  ? "border-transparent bg-ink text-bg"
+                  ? tab.key === "resolved"
+                    ? "border-transparent bg-resolved text-bg"
+                    : "border-transparent bg-ink text-bg"
                   : "border-border text-ink-dim hover:border-ink-dim"
               }`}
             >

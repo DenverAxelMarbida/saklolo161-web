@@ -54,6 +54,71 @@ body {
   width: 100%;
 }
 
+/* Custom dark-theme hover tooltip for map incident pins.
+   Mapbox injects a `.mapboxgl-popup` shell; we restyle it to match the
+   control room palette and put the actual content in `.sak-tooltip`. */
+.mapboxgl-popup.sak-tooltip-popup .mapboxgl-popup-content {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  min-width: 200px;
+}
+
+.mapboxgl-popup.sak-tooltip-popup .mapboxgl-popup-tip {
+  border-top-color: var(--color-border);
+}
+
+.sak-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.sak-tooltip-cat {
+  align-self: flex-start;
+  border-radius: 4px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #fff;
+}
+
+.sak-tooltip-status {
+  align-self: flex-start;
+  border: 1px solid var(--color-resolved);
+  color: var(--color-resolved);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.sak-tooltip-row {
+  color: var(--color-ink-dim);
+}
+
+.sak-tooltip-row b {
+  color: var(--color-ink);
+}
+
+.sak-tooltip-loc {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.sak-tooltip-elapsed {
+  color: var(--color-ink-dim);
+  font-size: 11px;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

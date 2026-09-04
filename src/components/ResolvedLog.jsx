@@ -1,7 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { CATEGORIES } from "../lib/config";
+import ResolvedDetailModal from "./ResolvedDetailModal";
 
 export default function ResolvedLog({ incidents, query }) {
+  const [selectedIncident, setSelectedIncident] = useState(null);
   const resolved = useMemo(
     () =>
       incidents
@@ -29,9 +31,10 @@ export default function ResolvedLog({ incidents, query }) {
         </p>
       )}
       {filtered.map((incident) => (
-        <div
+        <button
           key={incident.id}
-          className="mb-2 w-full rounded-md border border-border bg-panel p-3 text-left"
+          onClick={() => setSelectedIncident(incident)}
+          className="mb-2 w-full rounded-md border border-border bg-panel p-3 text-left transition-colors hover:bg-panel-hover"
           style={{ borderLeft: `3px solid ${CATEGORIES[incident.category].color}` }}
         >
           <div className="flex items-center justify-between">
@@ -44,8 +47,15 @@ export default function ResolvedLog({ incidents, query }) {
           <span className="mt-2 inline-block rounded border border-resolved/40 bg-resolved/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-resolved">
             {incident.category} · Resolved
           </span>
-        </div>
+        </button>
       ))}
+
+      {selectedIncident && (
+        <ResolvedDetailModal
+          incident={selectedIncident}
+          onClose={() => setSelectedIncident(null)}
+        />
+      )}
     </div>
   );
 }
