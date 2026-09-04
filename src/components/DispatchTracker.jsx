@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { CATEGORIES } from "../lib/config";
 import { resolveIncident, markEnRoute } from "../lib/api";
 import RouteMap from "./RouteMap";
 
@@ -10,7 +9,6 @@ const STEPS = ["Pending", "Dispatched", "En Route", "Resolved"];
 const STATION_COORDS = { lat: 14.6455, lng: 121.101 };
 
 export default function DispatchTracker({ incident, onClose, onResolved, onStatusUpdated }) {
-  const category = CATEGORIES[incident.category];
 
   // The stepper reflects the incident's REAL status field — never a
   // locally-guessed or hardcoded step index. Fall back to 0 if the
@@ -97,8 +95,7 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">Status</div>
             <div
               key={incident.status}
-              className="animate-pop-in font-mono text-lg font-semibold"
-              style={{ color: category.color }}
+              className="animate-pop-in font-mono text-lg font-semibold text-ink"
             >
               {incident.status}
             </div>
