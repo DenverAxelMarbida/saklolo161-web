@@ -5,6 +5,7 @@ import CategoryTally from "./CategoryTally";
 import IncidentMap from "./IncidentMap";
 import ActiveQueue from "./ActiveQueue";
 import ResolvedLog from "./ResolvedLog";
+import { useWeatherRiver } from "../hooks/useWeatherRiver";
 
 export default function ControlRoom({ incidents, onSelectIncident, initialAgency }) {
   // The category filter is shared between the queue, the map markers,
@@ -20,12 +21,13 @@ export default function ControlRoom({ incidents, onSelectIncident, initialAgency
   );
   const [queueView, setQueueView] = useState("active");
   const [resolvedQuery, setResolvedQuery] = useState("");
+  const { weather, river, loading } = useWeatherRiver();
 
   return (
     <div className="grid h-full grid-cols-[280px_1fr_320px] gap-3 p-3">
       <aside className="space-y-3 overflow-y-auto">
-        <WeatherCard />
-        <RiverLevelCard />
+        <WeatherCard weather={weather} loading={loading} />
+        <RiverLevelCard river={river} loading={loading} />
         <CategoryTally
           incidents={incidents}
           activeFilter={activeFilter}
