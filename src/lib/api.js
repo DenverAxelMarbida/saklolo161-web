@@ -47,12 +47,13 @@ export const getWeatherRiver = async () => {
     weather: {
       tempC: parseInt(d.temperature, 10),       // "30°C" -> 30
       condition: d.condition,
+      humidity: d.humidity,
+      wind: d.wind,
       risk: d.riskLevel.split(" ")[0].toUpperCase(), // "LOW RISK" -> "LOW"
     },
     river: {
       levelM: d.riverLevelMeters,
-      status: d.riverStatus.toUpperCase(),        // "Normal" -> "NORMAL"
-      sparkline: Array(12).fill(d.riverLevelMeters), // no history endpoint yet — flat line as placeholder
+      status: d.riverStatus, // as backend sends it ("Normal"), matching the mobile hero
     },
   };
 };
