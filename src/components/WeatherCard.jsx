@@ -25,10 +25,15 @@ export default function WeatherCard({ weather, loading }) {
           <span className="text-sm text-ink-dim">Loading…</span>
         </div>
       ) : (
-        <div className="mt-2 flex items-baseline gap-2">
-          <span className="font-mono text-3xl font-semibold">{weather.tempC}°C</span>
-          <span className="text-sm text-ink-dim">{weather.condition}</span>
-        </div>
+        <>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="font-mono text-3xl font-semibold">{weather.tempC}°C</span>
+            <span className="text-sm text-ink-dim">{weather.condition}</span>
+          </div>
+          <div className="mt-1 text-[11px] text-ink-dim">
+            Humidity: {weather.humidity} | Wind: {weather.wind}
+          </div>
+        </>
       )}
     </div>
   );
