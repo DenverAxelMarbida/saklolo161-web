@@ -18,22 +18,25 @@ prefixed `VITE_` or it's silently stripped from the bundle.
 ## Roadmap Status
 
 - **Phase 1 — Backend:** done, see `saklolo161-backend`'s `AGENTS.md`.
-- **Phase 2 — Frontend UI (in progress):**
+- **Phase 2 — Frontend UI (done):**
   - Control Room, Triage Modal, Live Tracker — implemented.
-  - **Auth (new):** JWT-based login (`src/lib/auth.js`), route
-    protection everywhere except the citizen-facing endpoints, agency
-    scoping. Full step-by-step list: `saklolo161-web-phase2-tasks.md`,
-    tasks 2.1–2.3.
-  - **Shared filter state + Mark En Route (new):** category filter
-    lifted out of `ActiveQueue.jsx` into `ControlRoom.jsx`, defaulted
-    to the signed-in dispatcher's agency; a real "Mark En Route"
-    trigger added to `DispatchTracker.jsx`. Tasks 2.4–2.6 in the same
-    file.
+  - **Auth (JWT):** login (`src/lib/auth.js`), 401-driven sign-out,
+    agency scoping. Step-by-step list used:
+    `saklolo161-web-phase2-tasks.md` (tasks 2.1–2.3).
+  - **Shared filter state + Mark En Route:** category filter lifted out
+    of `ActiveQueue.jsx` into `ControlRoom.jsx`, defaulted to the
+    signed-in dispatcher's agency; a real "Mark En Route" trigger in
+    `DispatchTracker.jsx`. Tasks 2.4–2.6 in the same file.
   - Station routing uses a local fallback config
     (`src/lib/config.js` → `CATEGORIES[key].stations`) with `id`/`name`
     only — never phone numbers.
-- **Phase 3 — Cloud & Integration (next):** Firebase RTDB + Firebase
-  Auth + Semaphore SMS. See "Phase 3 migration path" below.
+- **Phase 3 (in progress):** real routing/ETA from `GET /api/routes`,
+  evidence viewer, a vitest/RTL suite, then the Firebase Auth cutover
+  (touches `src/lib/auth.js` only) as a scheduled coordinated window.
+  - Task list: `../Phase 3/saklolo161-web-phase3-tasks.md`
+  - Frozen contract: `../Phase 3/saklolo161-phase3-contracts.md`
+  - Auth cutover checklist: `../Phase 3/saklolo161-auth-coordination.md`
+  See "Phase 3 migration path" below.
 
 ## Design Tokens (must match exactly — `src/index.css` `@theme`)
 
@@ -146,14 +149,17 @@ production.
 ## Known Gaps (do not treat as "done" without flagging)
 
 - `DispatchTracker.jsx`: `STATION_COORDS` is a static demo constant,
-  and `Distance`/`ETA` are hardcoded strings, not computed from any
-  API response.
-- `RouteMap.jsx`: draws a straight line, not a real routed path.
-  Intended to be swapped for Mapbox Directions API output (Phase 3+).
+  and `Distance`/`ETA` are hardcoded strings — Phase 3 replaces them
+  with `station.coords` and `GET /api/routes` metrics (web task 1).
+- `RouteMap.jsx`: draws a straight line, not a real routed path. Phase 3
+  draws `GET /api/routes` geometry (web task 1); straight line remains
+  the graceful fallback.
 - Raw JWT stored in `localStorage` (`src/lib/auth.js`) is a known,
   accepted XSS exposure surface for the Phase 2 staging/testing
   deploy's small trusted user base — not hardened (httpOnly cookie +
-  CSRF) yet. Revisit before this is a public-facing production login.
+  CSRF) yet. The Phase 3 Firebase Auth cutover replaces the token model
+  entirely; revisit httpOnly/CSRF hardening before any public-facing
+  production login.
 
 ## Phase 3 Migration Path
 
@@ -162,17 +168,16 @@ Net effect: the Phase 3 Firebase migration touches
 `App.jsx`/`Header.jsx`/`api.js`/filter logic never touch Firebase
 directly, only `onAuthChange()`'s output shape.
 
-See `saklolo161-auth-implementation-plan-v2.md`'s full cutover
+See `../Phase 3/saklolo161-auth-coordination.md`'s full cutover
 checklist before running that migration — re-provisioning accounts and
-the scheduled forced re-login need a coordinated window, not a silent
-deploy, and the same is true of the backend's `GET /api/incidents`
-route-protection deploy landing in the same window as this repo's
-auth work (see the coordination note in
-`saklolo161-web-phase2-tasks.md`).
+the scheduled forced re-login need a coordinated window with the
+backend's Firebase deploy, not a silent deploy (the one cross-repo
+coordinated change in Phase 3).
 
 ## Mobile App
 
 Not reviewed in this context. See `saklolo161-mobile`'s own
 `AGENTS.md`. Do not assume it mirrors any pattern here — it has no
 login and calls a deliberately narrower slice of the API
-(`POST /api/incidents`, `GET /api/incidents/:id` only).
+(`POST /api/incidents`, `GET /api/incidents/:id`, plus the Phase 3
+public `GET /api/routes` and `POST /api/incidents/:id/evidence`).
