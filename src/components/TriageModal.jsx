@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { CATEGORIES } from "../lib/config";
-import { dispatchIncident } from "../lib/api";
+import { dispatchIncident, normalizeIncident } from "../lib/api";
 import MiniIncidentMap from "./MiniIncidentMap";
+import EvidenceGallery from "./EvidenceGallery";
 
 export default function TriageModal({ incident, onClose, onDispatched }) {
   const category = CATEGORIES[incident.category];
@@ -29,12 +30,19 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      await dispatchIncident({
+      const res = await dispatchIncident({
         incidentId: incident.id,
         stationId,
         assignedUnit,
       });
-      onDispatched({ ...incident, status: "DISPATCHED", stationId, assignedUnit });
+
+      // The dispatch response already carries the authoritative state —
+      // most importantly the assigned station's `coords` (contract anchor:
+      // _incident.station.coords_ at the TOP level). Passing it through
+      // normalized means the Live Dispatch Tracker opens WITH the station
+      // so Distance/ETA render instantly and the real route fetch starts
+      // immediately, instead of inheriting the Pending card's `station: null`.
+      onDispatched(normalizeIncident(res.data));
     } catch (err) {
       // Surface the backend's real message for 4xx validation errors (it
       // tells the dispatcher exactly what's wrong, e.g. unknown unit). Only
@@ -88,15 +96,8 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
             {incident.evidence.length > 0 && (
               <div>
                 <h3 className="text-xs uppercase tracking-wide text-ink-dim">Evidence</h3>
-                <div className="mt-1 flex flex-wrap gap-2">
-                  {incident.evidence.map((file) => (
-                    <span
-                      key={file}
-                      className="rounded-full border border-border bg-bg px-2.5 py-1 text-xs text-ink-dim"
-                    >
-                      📎 {file}
-                    </span>
-                  ))}
+                <div className="mt-1.5">
+                  <EvidenceGallery evidence={incident.evidence} />
                 </div>
               </div>
             )}

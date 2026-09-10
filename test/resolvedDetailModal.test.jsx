@@ -51,7 +51,7 @@ describe("ResolvedDetailModal evidence", () => {
     expect(video.getAttribute("src")).toContain("b.mp4");
   });
 
-  it("skips evidence entries with an empty url (pre-Storage cutover) gracefully", () => {
+  it("degrades empty-url entries to a pill instead of skipping them", () => {
     render(
       <ResolvedDetailModal
         incident={makeIncident({
@@ -64,7 +64,8 @@ describe("ResolvedDetailModal evidence", () => {
       />,
     );
 
-    expect(screen.getByText("1 evidence file")).toBeTruthy();
+    expect(screen.getByText("2 evidence files")).toBeTruthy();
+    expect(screen.getByText("📎 Photo · 0 KB")).toBeTruthy();
 
     const previews = document.querySelectorAll("img[src], video[src]");
     expect(previews).toHaveLength(1);

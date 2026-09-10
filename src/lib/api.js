@@ -76,6 +76,12 @@ export const getWeatherRiver = async () => {
   };
 };
 
+// Evidence `url` is stored as a RELATIVE path by the backend so it works
+// across LAN phone + TLS web without baking a host. Resolve it against this
+// client's API base; absolute Firebase URLs (post-cutover) pass through.
+export const resolveMediaUrl = (url) =>
+  url && url.startsWith("/") ? `${API_BASE_URL || ""}${url}` : url;
+
 // The backend serializes incidents in its own field casing/shape, but the
 // UI was built against the mock-data shape (see data/mockIncidents.js).
 // This normalizes every API incident into that expected shape so the map,
@@ -98,7 +104,7 @@ export const normalizeIncident = (i) => ({
       ? Math.max(0, Math.floor((Date.now() - new Date(i.timestamp).getTime()) / 60000))
       : 0,
   callerNotes: i.notes ?? i.callerNotes ?? "",
-  evidence: i.evidence ?? [],
+  evidence: (i.evidence ?? []).map((e) => ({ ...e, url: resolveMediaUrl(e.url) })),
   station: i.station ?? null,
   dispatch: i.dispatch || null,
   resolvedAt: i.resolvedAt ?? null,

@@ -1,5 +1,6 @@
 import { CATEGORIES } from "../lib/config";
 import MiniIncidentMap from "./MiniIncidentMap";
+import EvidenceGallery from "./EvidenceGallery";
 
 function formatResolvedDate(isoString) {
   if (!isoString) return "N/A";
@@ -16,10 +17,10 @@ function formatResolvedDate(isoString) {
 export default function ResolvedDetailModal({ incident, onClose }) {
   const category = CATEGORIES[incident.category];
 
-  // evidence[].url is an empty string until the Firebase Storage cutover —
-  // upload metadata is real, but `url` won't load a preview yet. Only
-  // render files with a truthy url; files without one no-op gracefully.
-  const evidence = (incident.evidence || []).filter((e) => e?.url);
+  // Real media renders inline when `url` is served; legacy records with an
+  // empty url (pre-storage uploads) degrade to a labeled pill rather than
+  // disappearing silently.
+  const evidence = incident.evidence || [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -72,31 +73,8 @@ export default function ResolvedDetailModal({ incident, onClose }) {
                 <p className="mt-1 text-xs text-ink-dim">
                   {evidence.length} evidence file{evidence.length !== 1 ? "s" : ""}
                 </p>
-                <div className="mt-2 space-y-2">
-                  {evidence.map((file) => {
-                    const mimeType = file.mimeType || "";
-                    if (mimeType.startsWith("image/")) {
-                      return (
-                        <img
-                          key={file.fileId ?? file.url}
-                          src={file.url}
-                          alt="Incident evidence"
-                          className="max-h-48 w-full rounded-md border border-border object-cover"
-                        />
-                      );
-                    }
-                    if (mimeType.startsWith("video/")) {
-                      return (
-                        <video
-                          key={file.fileId ?? file.url}
-                          src={file.url}
-                          controls
-                          className="max-h-48 w-full rounded-md border border-border"
-                        />
-                      );
-                    }
-                    return null;
-                  })}
+                <div className="mt-2">
+                  <EvidenceGallery evidence={evidence} />
                 </div>
               </div>
             )}

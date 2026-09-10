@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { resolveIncident, markEnRoute, fetchRoute } from "../lib/api";
+import { straightLineEstimate } from "../lib/geo";
 import RouteMap from "./RouteMap";
 
 const STEPS = ["Pending", "Dispatched", "En Route", "Resolved"];
@@ -34,6 +35,16 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
   const stationLng = stationCoords?.lng;
   const incidentLat = incident.coords?.lat;
   const incidentLng = incident.coords?.lng;
+
+  // The real route (GET /api/routes) is a Mapbox round-trip and can take
+  // a moment. Show the straight-line estimate at ~40 km/h INSTANTLY so
+  // Distance/ETA never sit on "—", then let the real numbers replace it.
+  const provisional =
+    stationLat != null && stationLng != null && incidentLat != null && incidentLng != null
+      ? straightLineEstimate(stationLat, stationLng, incidentLat, incidentLng)
+      : null;
+  const distanceMeters = route?.distanceMeters ?? provisional?.distanceMeters;
+  const durationSeconds = route?.durationSeconds ?? provisional?.durationSeconds;
 
   useEffect(() => {
     if (
@@ -141,8 +152,8 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">Distance</div>
             <div className="font-mono text-lg font-semibold">
-              {route?.distanceMeters != null
-                ? `${(route.distanceMeters / 1000).toFixed(1)} km`
+              {distanceMeters != null
+                ? `${(distanceMeters / 1000).toFixed(1)} km`
                 : "—"}
             </div>
           </div>
@@ -158,8 +169,8 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">ETA</div>
             <div className="font-mono text-lg font-semibold">
-              {route?.durationSeconds != null
-                ? `~${Math.round(route.durationSeconds / 60)} min`
+              {durationSeconds != null
+                ? `~${Math.round(durationSeconds / 60)} min`
                 : "—"}
             </div>
           </div>

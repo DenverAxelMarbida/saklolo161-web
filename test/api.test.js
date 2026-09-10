@@ -5,6 +5,7 @@ import {
   fetchRoute,
   getIncidents,
 } from "../src/lib/api";
+import { API_BASE_URL } from "../src/lib/config";
 
 const { mockGet, mockPost, apiInstance } = vi.hoisted(() => {
   const mockGet = vi.fn();
@@ -124,11 +125,19 @@ describe("normalizeIncident", () => {
     expect(normalized.resolvedAt).toBeNull();
   });
 
-  it("passes evidence through untouched", () => {
+  it("passes evidence through and resolves relative media urls against the API base", () => {
+    // Backend stores a RELATIVE media path so LAN phone + TLS web both
+    // reach it; normalizeIncident resolves it against this client's base
+    // and leaves absolute urls (Firebase post-cutover) untouched.
     const evidence = [
-      { fileId: "a", url: "", mimeType: "image/jpeg", uploadedAt: "t" },
+      { fileId: "a", url: "/api/incidents/x/evidence/a/media", mimeType: "image/jpeg", uploadedAt: "t" },
+      { fileId: "b", url: "https://cdn.example/b.jpg", mimeType: "image/png", uploadedAt: "t" },
     ];
-    expect(normalizeIncident({ incidentId: "a", evidence }).evidence).toBe(evidence);
+    const normalized = normalizeIncident({ incidentId: "x", evidence });
+    expect(normalized.evidence).not.toBe(evidence);
+    expect(normalized.evidence[0].url).toBe(`${API_BASE_URL}/api/incidents/x/evidence/a/media`);
+    expect(normalized.evidence[1].url).toBe("https://cdn.example/b.jpg");
+    expect(normalized.evidence[0].fileId).toBe("a");
   });
 
   it("computes elapsedMinutes from the timestamp when not provided directly", () => {
