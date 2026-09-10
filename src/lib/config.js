@@ -20,13 +20,13 @@ export const CATEGORIES = {
     stations: [
       {
         id: "MEDICAL_MDRRMO_BASE",
-        name: "MDRRMO Base - Sta. Elena",
-        assignedUnits: ["MDRRMO Ambulance 1", "MDRRMO Rescue Van"],
+        name: "Marikina City Disaster Risk Reduction Management Office",
+        assignedUnits: ["Rescue 161 Ambulance #1", "Ambulance #2", "Heavy Rescue Truck #1"],
       },
       {
         id: "MEDICAL_ARMMC_ER",
-        name: "ARMMC ER Unit - Sumulong",
-        assignedUnits: ["ARMMC Ambulance 1"],
+        name: "Amang Rodriguez Memorial Medical Center",
+        assignedUnits: ["ARMMC ALS Ambulance #1", "Mobile Trauma Unit"],
       },
     ],
   },
@@ -36,13 +36,13 @@ export const CATEGORIES = {
     stations: [
       {
         id: "FIRE_BFP_MAIN_STATION",
-        name: "BFP Main Station - Shoe Ave",
-        assignedUnits: ["BFP Fire Truck #1", "BFP Rescue Unit"],
+        name: "Bureau of Fire Protection Central Fire Station - Marikina City",
+        assignedUnits: ["BFP Engine Pumper #1", "BFP Engine Pumper #2", "BFP Rescue Unit"],
       },
       {
         id: "FIRE_BFP_STATION_2",
-        name: "BFP Station 2 - Sto. Niño",
-        assignedUnits: ["BFP Fire Truck #2"],
+        name: "Barangay Emergency Response Team - BERT",
+        assignedUnits: ["BFP Engine Pumper #3", "BFP Tanker #1"],
       },
     ],
   },
@@ -52,8 +52,8 @@ export const CATEGORIES = {
     stations: [
       {
         id: "FLOOD_RIVER_COMMAND",
-        name: "Marikina River Command - Riverbanks Center",
-        assignedUnits: ["River Rescue Boat 1", "Flood Response Truck"],
+        name: "River Park Authority",
+        assignedUnits: ["Rescue Boat Unit #1", "Rescue Boat Unit #2", "Amphibious Truck #1"],
       },
     ],
   },
@@ -63,13 +63,13 @@ export const CATEGORIES = {
     stations: [
       {
         id: "CRIME_PNP_MAIN_HQ",
-        name: "PNP Main HQ - Sta. Elena",
-        assignedUnits: ["PNP Mobile Patrol 1", "PNP Mobile Patrol 2"],
+        name: "Marikina City Police Headquarters",
+        assignedUnits: ["Mobile Patrol #101", "Mobile Patrol #102", "SWAT Van #1"],
       },
       {
         id: "CRIME_PNP_SUBSTATION",
-        name: "PNP Sub-Station - Concepcion Uno",
-        assignedUnits: ["PNP Mobile Patrol 3"],
+        name: "Barangka Police Sub-Station Marikina City",
+        assignedUnits: ["Mobile Patrol #103", "Mobile Patrol #104", "Mobile Patrol #105"],
       },
     ],
   },

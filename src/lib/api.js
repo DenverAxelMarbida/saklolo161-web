@@ -99,6 +99,7 @@ export const normalizeIncident = (i) => ({
       : 0,
   callerNotes: i.notes ?? i.callerNotes ?? "",
   evidence: i.evidence ?? [],
+  station: i.station ?? null,
   dispatch: i.dispatch || null,
   resolvedAt: i.resolvedAt ?? null,
 });

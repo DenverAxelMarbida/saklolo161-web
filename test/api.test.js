@@ -79,6 +79,24 @@ describe("normalizeIncident", () => {
     expect(normalized.resolvedAt).toBe("2026-09-08T01:00:00Z");
   });
 
+  it("passes the station (with coords) through for DispatchTracker", () => {
+    const normalized = normalizeIncident({
+      incidentId: "FLOOD-24-0003",
+      station: {
+        id: "FLOOD_RIVER_COMMAND",
+        name: "River Park Authority",
+        coords: { lat: 14.635687529310072, lng: 121.09384592111986 },
+      },
+    });
+
+    expect(normalized.station).toEqual({
+      id: "FLOOD_RIVER_COMMAND",
+      name: "River Park Authority",
+      coords: { lat: 14.635687529310072, lng: 121.09384592111986 },
+    });
+    expect(normalized.station.coords.lat).toBe(14.635687529310072);
+  });
+
   it("falls back to legacy flat lat/lng and plain-string location", () => {
     const normalized = normalizeIncident({
       id: "MEDICAL-24-0002",
@@ -101,6 +119,7 @@ describe("normalizeIncident", () => {
     expect(normalized.coords).toEqual({ lat: 0, lng: 0 });
     expect(normalized.callerNotes).toBe("");
     expect(normalized.evidence).toEqual([]);
+    expect(normalized.station).toBeNull();
     expect(normalized.dispatch).toBeNull();
     expect(normalized.resolvedAt).toBeNull();
   });
