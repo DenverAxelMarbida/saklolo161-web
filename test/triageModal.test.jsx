@@ -119,4 +119,62 @@ describe("TriageModal", () => {
     expect(screen.queryByText(/📎/)).toBeNull();
     expect(screen.getByText("Water rising near the bridge.")).toBeTruthy();
   });
+
+  it("renders an evidence progress banner while uploads are still inbound", () => {
+    const incident = makeIncident({
+      evidence: [
+        {
+          fileId: "ev-1",
+          url: "http://localhost:5000/api/incidents/x/evidence/ev-1/media",
+          mimeType: "image/jpeg",
+          sizeKb: 900,
+          uploadedAt: "2026-09-10T12:00:00.000Z",
+        },
+      ],
+      evidenceUploading: true,
+      evidenceExpectedCount: 3,
+      evidenceFailedCount: 0,
+    });
+
+    const { container } = render(
+      <TriageModal
+        incident={incident}
+        onClose={() => {}}
+        onDispatched={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/Attaching evidence 1\/3/)).toBeTruthy();
+    const progress = container.querySelector(".bg-risk-mid.transition-all");
+    expect(progress).toBeTruthy();
+    expect(progress.style.width).toBe(`${(1 / 3) * 100}%`);
+  });
+
+  it("warns when some attachments failed after the upload loop finished", () => {
+    const incident = makeIncident({
+      evidence: [
+        {
+          fileId: "ev-1",
+          url: "http://localhost:5000/api/incidents/x/evidence/ev-1/media",
+          mimeType: "image/jpeg",
+          sizeKb: 900,
+          uploadedAt: "2026-09-10T12:00:00.000Z",
+        },
+      ],
+      evidenceUploading: false,
+      evidenceExpectedCount: 3,
+      evidenceFailedCount: 2,
+    });
+
+    render(
+      <TriageModal
+        incident={incident}
+        onClose={() => {}}
+        onDispatched={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/2 attachments failed to upload/)).toBeTruthy();
+    expect(screen.queryByText(/Attaching evidence/)).toBeNull();
+  });
 });

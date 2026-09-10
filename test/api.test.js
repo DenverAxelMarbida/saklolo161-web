@@ -120,9 +120,25 @@ describe("normalizeIncident", () => {
     expect(normalized.coords).toEqual({ lat: 0, lng: 0 });
     expect(normalized.callerNotes).toBe("");
     expect(normalized.evidence).toEqual([]);
+    expect(normalized.evidenceUploading).toBe(false);
+    expect(normalized.evidenceExpectedCount).toBe(0);
+    expect(normalized.evidenceFailedCount).toBe(0);
     expect(normalized.station).toBeNull();
     expect(normalized.dispatch).toBeNull();
     expect(normalized.resolvedAt).toBeNull();
+  });
+
+  it("passes the evidence-upload progress fields through for the queue/triage badges", () => {
+    const normalized = normalizeIncident({
+      incidentId: "x",
+      evidenceUploading: true,
+      evidenceExpectedCount: 3,
+      evidenceFailedCount: 1,
+    });
+
+    expect(normalized.evidenceUploading).toBe(true);
+    expect(normalized.evidenceExpectedCount).toBe(3);
+    expect(normalized.evidenceFailedCount).toBe(1);
   });
 
   it("passes evidence through and resolves relative media urls against the API base", () => {
