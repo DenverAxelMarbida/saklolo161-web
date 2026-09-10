@@ -93,11 +93,45 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
               <p className="mt-1 text-sm">{incident.callerNotes}</p>
             </div>
 
-            {incident.evidence.length > 0 && (
+            {(incident.evidence.length > 0 ||
+              incident.evidenceUploading ||
+              incident.evidenceExpectedCount > 0) && (
               <div>
                 <h3 className="text-xs uppercase tracking-wide text-ink-dim">Evidence</h3>
                 <div className="mt-1.5">
-                  <EvidenceGallery evidence={incident.evidence} />
+                  {incident.evidence.length > 0 && (
+                    <EvidenceGallery evidence={incident.evidence} />
+                  )}
+
+                  {incident.evidenceUploading && (
+                    <div className="mt-2 rounded border border-risk-mid/40 bg-risk-mid/10 p-2.5">
+                      <p className="flex items-center gap-1.5 text-xs font-semibold text-risk-mid">
+                        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-risk-mid" />
+                        Attaching evidence {incident.evidence.length}/
+                        {incident.evidenceExpectedCount}…
+                      </p>
+                      <div className="mt-2 h-1 w-full overflow-hidden rounded bg-risk-mid/25">
+                        <div
+                          className="h-full bg-risk-mid transition-all"
+                          style={{
+                            width: `${
+                              incident.evidenceExpectedCount > 0
+                                ? (incident.evidence.length / incident.evidenceExpectedCount) * 100
+                                : 0
+                            }%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {incident.evidenceFailedCount > 0 && !incident.evidenceUploading && (
+                    <p className="mt-2 text-xs font-medium text-fire">
+                      ⚠ {incident.evidenceFailedCount} attachment
+                      {incident.evidenceFailedCount === 1 ? "" : "s"} failed to upload — the
+                      report still came through.
+                    </p>
+                  )}
                 </div>
               </div>
             )}

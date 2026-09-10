@@ -72,13 +72,30 @@ export default function ActiveQueue({
               <span className="font-mono text-xs text-ink-dim">{incident.elapsedMinutes}m ago</span>
             </div>
             <div className="mt-1 text-sm">{incident.location}</div>
-            <span
-              className={`mt-2 inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                STATUS_STYLES[incident.status] || STATUS_STYLES.PENDING
-              }`}
-            >
-              {incident.status}
-            </span>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                  STATUS_STYLES[incident.status] || STATUS_STYLES.PENDING
+                }`}
+              >
+                {incident.status}
+              </span>
+              {incident.evidenceUploading && (
+                <span className="inline-block rounded border border-risk-mid/40 px-1.5 py-0.5 text-[10px] font-semibold text-risk-mid">
+                  ⏳ attaching evidence {incident.evidence.length}/{incident.evidenceExpectedCount}
+                </span>
+              )}
+              {incident.evidenceFailedCount > 0 && (
+                <span
+                  className="inline-block rounded border border-fire/40 px-1.5 py-0.5 text-[10px] font-semibold text-fire"
+                  title={`${incident.evidenceFailedCount} attachment${
+                    incident.evidenceFailedCount === 1 ? "" : "s"
+                  } failed to upload`}
+                >
+                  ⚠ {incident.evidenceFailedCount} failed
+                </span>
+              )}
+            </div>
           </button>
         ))}
       </div>
