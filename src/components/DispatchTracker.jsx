@@ -1,12 +1,8 @@
-import { useState } from "react";
-import { resolveIncident, markEnRoute } from "../lib/api";
+import { useEffect, useState } from "react";
+import { resolveIncident, markEnRoute, fetchRoute } from "../lib/api";
 import RouteMap from "./RouteMap";
 
 const STEPS = ["Pending", "Dispatched", "En Route", "Resolved"];
-
-// Static demo coords for the assigned station; a real build would get
-// this from the station record returned by the backend.
-const STATION_COORDS = { lat: 14.6455, lng: 121.101 };
 
 export default function DispatchTracker({ incident, onClose, onResolved, onStatusUpdated }) {
 
@@ -22,6 +18,57 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
 
   const [resolving, setResolving] = useState(false);
   const [markingEnRoute, setMarkingEnRoute] = useState(false);
+
+  // The station (and its coords) live at the TOP level of the incident,
+  // not under `dispatch` — the backend exposes station.coords there.
+  const stationCoords = incident.station?.coords ?? null;
+
+  // Distance/ETA come from the same GET /api/routes payload the map
+  // draws. Re-fetched whenever either endpoint's coords actually change
+  // (e.g. an incident re-dispatched to another station lands through the
+  // poll cycle); leave null until the route arrives so the UI degrades
+  // to "—" instead of a stale hardcoded number.
+  const [route, setRoute] = useState(null);
+
+  const stationLat = stationCoords?.lat;
+  const stationLng = stationCoords?.lng;
+  const incidentLat = incident.coords?.lat;
+  const incidentLng = incident.coords?.lng;
+
+  useEffect(() => {
+    if (
+      stationLat == null ||
+      stationLng == null ||
+      incidentLat == null ||
+      incidentLng == null
+    ) {
+      setRoute(null);
+      return;
+    }
+
+    let cancelled = false;
+    setRoute(null);
+
+    fetchRoute({
+      fromLat: stationLat,
+      fromLng: stationLng,
+      toLat: incidentLat,
+      toLng: incidentLng,
+    })
+      .then((r) => {
+        if (cancelled) return;
+        setRoute(r);
+      })
+      .catch(() => {
+        // Leave route null; the tracker renders "—" placeholders and the
+        // map keeps the straight-line fallback until the next poll tick
+        // re-drives coords/refresh.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stationLat, stationLng, incidentLat, incidentLng]);
 
   const handleResolve = async () => {
     setResolving(true);
@@ -83,13 +130,21 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
         </div>
 
         <div className="h-64 md:h-80">
-          <RouteMap stationCoords={STATION_COORDS} incidentCoords={incident.coords} />
+          <RouteMap
+            stationCoords={stationCoords}
+            incidentCoords={incident.coords}
+            geometry={route?.geometry}
+          />
         </div>
 
         <div className="grid grid-cols-3 gap-3 border-t border-border p-4">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">Distance</div>
-            <div className="font-mono text-lg font-semibold">2.4 km</div>
+            <div className="font-mono text-lg font-semibold">
+              {route?.distanceMeters != null
+                ? `${(route.distanceMeters / 1000).toFixed(1)} km`
+                : "—"}
+            </div>
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">Status</div>
@@ -103,7 +158,9 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">ETA</div>
             <div className="font-mono text-lg font-semibold">
-              {incident.dispatch?.estimatedTurnout ?? "—"}
+              {route?.durationSeconds != null
+                ? `~${Math.round(route.durationSeconds / 60)} min`
+                : "—"}
             </div>
           </div>
         </div>

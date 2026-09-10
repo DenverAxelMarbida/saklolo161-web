@@ -39,6 +39,24 @@ api.interceptors.response.use(
   },
 );
 
+// The backend's public GET /api/routes returns a real driving route
+// (geometry + metrics). Degradation is the backend's job: on any
+// Directions failure it returns the same shape with a straight-line
+// geometry, so clients only ever draw `geometry` — no client-side
+// routing math (see saklolo161-phase3-contracts.md).
+export const fetchRoute = async ({ fromLat, fromLng, toLat, toLng }) => {
+  const response = await api.get("/api/routes", {
+    params: { fromLat, fromLng, toLat, toLng },
+  });
+  const d = response.data.data;
+
+  return {
+    geometry: d.geometry,
+    distanceMeters: d.distanceMeters,
+    durationSeconds: d.durationSeconds,
+  };
+};
+
 export const getWeatherRiver = async () => {
   const response = await api.get("/api/weather-river");
   const d = response.data.data; // backend wraps the payload in { success, message, data }
@@ -62,7 +80,8 @@ export const getWeatherRiver = async () => {
 // UI was built against the mock-data shape (see data/mockIncidents.js).
 // This normalizes every API incident into that expected shape so the map,
 // queue, and tally all stay in sync regardless of backend schema changes.
-const normalizeIncident = (i) => ({
+// Exported for the unit-test suite (test/api.test.js).
+export const normalizeIncident = (i) => ({
   id: i.incidentId ?? i.id,
   category: (i.category || "").toUpperCase(),
   status: (i.status || "PENDING").toUpperCase(),
@@ -80,6 +99,7 @@ const normalizeIncident = (i) => ({
       : 0,
   callerNotes: i.notes ?? i.callerNotes ?? "",
   evidence: i.evidence ?? [],
+  station: i.station ?? null,
   dispatch: i.dispatch || null,
   resolvedAt: i.resolvedAt ?? null,
 });

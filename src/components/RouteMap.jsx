@@ -1,36 +1,103 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { useMapboxMap } from "../hooks/useMapboxMap";
+import { fetchRoute } from "../lib/api";
 
 const ROUTE_SOURCE_ID = "dispatch-route";
 
-export default function RouteMap({ stationCoords, incidentCoords }) {
+function fallbackLine(stationCoords, incidentCoords) {
+  return {
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: [
+        [stationCoords.lng, stationCoords.lat],
+        [incidentCoords.lng, incidentCoords.lat],
+      ],
+    },
+  };
+}
+
+export default function RouteMap({ stationCoords, incidentCoords, geometry }) {
   const { containerRef, mapRef } = useMapboxMap({ center: incidentCoords, zoom: 13.5 });
+
+  // Real routed geometry comes from GET /api/routes. DispatchTracker passes
+  // it in alongside its distance/ETA read; this component can also fetch it
+  // itself. The straight line between both points stays the graceful
+  // fallback whenever no real geometry is available (fetch failure, degraded
+  // backend, or no route yet).
+  const [fetchedGeometry, setFetchedGeometry] = useState(null);
+  const [geometryFailed, setGeometryFailed] = useState(false);
+
+  const stationLat = stationCoords?.lat;
+  const stationLng = stationCoords?.lng;
+  const incidentLat = incidentCoords?.lat;
+  const incidentLng = incidentCoords?.lng;
+
+  useEffect(() => {
+    if (geometry) return;
+
+    let cancelled = false;
+    setFetchedGeometry(null);
+    setGeometryFailed(false);
+
+    if (
+      stationLat == null ||
+      stationLng == null ||
+      incidentLat == null ||
+      incidentLng == null
+    ) {
+      return;
+    }
+
+    fetchRoute({
+      fromLat: stationLat,
+      fromLng: stationLng,
+      toLat: incidentLat,
+      toLng: incidentLng,
+    })
+      .then((route) => {
+        if (cancelled) return;
+        if (route.geometry?.coordinates?.length >= 2) {
+          setFetchedGeometry(route.geometry);
+        } else {
+          setGeometryFailed(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setGeometryFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [geometry, stationLat, stationLng, incidentLat, incidentLng]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
+    if (
+      stationLat == null ||
+      stationLng == null ||
+      incidentLat == null ||
+      incidentLng == null
+    ) {
+      return;
+    }
+
     const stationMarker = new mapboxgl.Marker({ color: "#2f80ed" })
-      .setLngLat([stationCoords.lng, stationCoords.lat])
+      .setLngLat([stationLng, stationLat])
       .addTo(map);
     const incidentMarker = new mapboxgl.Marker({ color: "#e4572e" })
-      .setLngLat([incidentCoords.lng, incidentCoords.lat])
+      .setLngLat([incidentLng, incidentLat])
       .addTo(map);
 
-    const line = {
-      type: "Feature",
-      geometry: {
-        type: "LineString",
-        // A straight line is a reasonable stand-in until the backend
-        // returns a real routed path (e.g. from Mapbox's Directions API);
-        // swap this for that response's `geometry` field once it exists.
-        coordinates: [
-          [stationCoords.lng, stationCoords.lat],
-          [incidentCoords.lng, incidentCoords.lat],
-        ],
-      },
-    };
+    const resolvedGeometry = geometry ?? (geometryFailed ? null : fetchedGeometry);
+    const line =
+      resolvedGeometry?.coordinates?.length >= 2
+        ? { type: "Feature", geometry: resolvedGeometry }
+        : fallbackLine({ lat: stationLat, lng: stationLng }, { lat: incidentLat, lng: incidentLng });
 
     function drawRoute() {
       if (map.getSource(ROUTE_SOURCE_ID)) {
@@ -58,15 +125,24 @@ export default function RouteMap({ stationCoords, incidentCoords }) {
     }
 
     const bounds = new mapboxgl.LngLatBounds()
-      .extend([stationCoords.lng, stationCoords.lat])
-      .extend([incidentCoords.lng, incidentCoords.lat]);
+      .extend([stationLng, stationLat])
+      .extend([incidentLng, incidentLat]);
     map.fitBounds(bounds, { padding: 60 });
 
     return () => {
       stationMarker.remove();
       incidentMarker.remove();
     };
-  }, [stationCoords, incidentCoords, mapRef]);
+  }, [
+    geometry,
+    geometryFailed,
+    fetchedGeometry,
+    stationLat,
+    stationLng,
+    incidentLat,
+    incidentLng,
+    mapRef,
+  ]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

@@ -16,6 +16,11 @@ function formatResolvedDate(isoString) {
 export default function ResolvedDetailModal({ incident, onClose }) {
   const category = CATEGORIES[incident.category];
 
+  // evidence[].url is an empty string until the Firebase Storage cutover —
+  // upload metadata is real, but `url` won't load a preview yet. Only
+  // render files with a truthy url; files without one no-op gracefully.
+  const evidence = (incident.evidence || []).filter((e) => e?.url);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-panel">
@@ -59,6 +64,42 @@ export default function ResolvedDetailModal({ incident, onClose }) {
               <h3 className="text-xs uppercase tracking-wide text-ink-dim">Caller Notes</h3>
               <p className="mt-1 text-sm">{incident.callerNotes || "No notes provided."}</p>
             </div>
+
+            {/* Evidence */}
+            {evidence.length > 0 && (
+              <div>
+                <h3 className="text-xs uppercase tracking-wide text-ink-dim">Evidence</h3>
+                <p className="mt-1 text-xs text-ink-dim">
+                  {evidence.length} evidence file{evidence.length !== 1 ? "s" : ""}
+                </p>
+                <div className="mt-2 space-y-2">
+                  {evidence.map((file) => {
+                    const mimeType = file.mimeType || "";
+                    if (mimeType.startsWith("image/")) {
+                      return (
+                        <img
+                          key={file.fileId ?? file.url}
+                          src={file.url}
+                          alt="Incident evidence"
+                          className="max-h-48 w-full rounded-md border border-border object-cover"
+                        />
+                      );
+                    }
+                    if (mimeType.startsWith("video/")) {
+                      return (
+                        <video
+                          key={file.fileId ?? file.url}
+                          src={file.url}
+                          controls
+                          className="max-h-48 w-full rounded-md border border-border"
+                        />
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Dispatch Location */}
             <div>
