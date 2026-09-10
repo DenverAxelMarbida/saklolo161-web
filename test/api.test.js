@@ -5,7 +5,7 @@ import {
   fetchRoute,
   getIncidents,
 } from "../src/lib/api";
-import { API_BASE_URL } from "../src/lib/config";
+import { resolveMediaUrl } from "../src/lib/api";
 
 const { mockGet, mockPost, apiInstance } = vi.hoisted(() => {
   const mockGet = vi.fn();
@@ -135,7 +135,7 @@ describe("normalizeIncident", () => {
     ];
     const normalized = normalizeIncident({ incidentId: "x", evidence });
     expect(normalized.evidence).not.toBe(evidence);
-    expect(normalized.evidence[0].url).toBe(`${API_BASE_URL}/api/incidents/x/evidence/a/media`);
+    expect(normalized.evidence[0].url).toBe(resolveMediaUrl("/api/incidents/x/evidence/a/media"));
     expect(normalized.evidence[1].url).toBe("https://cdn.example/b.jpg");
     expect(normalized.evidence[0].fileId).toBe("a");
   });
