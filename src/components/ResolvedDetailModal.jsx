@@ -13,6 +13,77 @@ function formatResolvedDate(isoString) {
   });
 }
 
+// Renders a single evidence entry. Backend entries are objects shaped
+// { fileId, url, mimeType, uploadedAt }; the mock/fallback data paths can
+// still carry plain filenames (strings). Per the Phase 3 evidence caveat,
+// url is often "" until the Firebase Storage cutover — those entries must
+// not render a broken preview, just their metadata.
+function EvidenceEntry({ file }) {
+  if (typeof file === "string") {
+    return (
+      <div className="rounded-md border border-border bg-bg p-2 text-xs text-ink-dim">
+        {file}
+      </div>
+    );
+  }
+
+  const url = file?.url;
+  const mimeType = (file?.mimeType || "").toLowerCase();
+  const label = file?.fileId || "evidence file";
+
+  if (!url) {
+    return (
+      <div className="rounded-md border border-border bg-bg p-2 text-xs text-ink-dim">
+        {label}
+      </div>
+    );
+  }
+
+  if (mimeType.startsWith("image/")) {
+    return (
+      <img
+        src={url}
+        alt={label}
+        className="max-h-48 w-full rounded-md border border-border object-cover"
+      />
+    );
+  }
+
+  if (mimeType.startsWith("video/")) {
+    return <video src={url} controls className="max-h-48 w-full rounded-md border border-border" />;
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className="block rounded-md border border-border bg-bg p-2 text-xs text-ink-dim hover:border-ink-dim"
+    >
+      {label}
+    </a>
+  );
+}
+
+function EvidenceSection({ evidence }) {
+  const files = Array.isArray(evidence) ? evidence : [];
+  if (files.length === 0) return null;
+
+  return (
+    <div>
+      <h3 className="text-xs uppercase tracking-wide text-ink-dim">Evidence</h3>
+      <p className="mt-1 text-sm text-ink-dim">
+        {files.length} evidence file{files.length === 1 ? "" : "s"}
+      </p>
+      <div className="mt-2 space-y-2">
+        {files.map((file, i) => (
+          <EvidenceEntry key={file?.fileId ?? i} file={file} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ResolvedDetailModal({ incident, onClose }) {
   const category = CATEGORIES[incident.category];
 
@@ -83,6 +154,9 @@ export default function ResolvedDetailModal({ incident, onClose }) {
                 {formatResolvedDate(incident.resolvedAt)}
               </p>
             </div>
+
+            {/* Evidence (citizen uploads) */}
+            <EvidenceSection evidence={incident.evidence} />
           </div>
         </div>
       </div>

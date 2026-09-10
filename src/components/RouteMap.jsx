@@ -4,35 +4,68 @@ import { useMapboxMap } from "../hooks/useMapboxMap";
 
 const ROUTE_SOURCE_ID = "dispatch-route";
 
-export default function RouteMap({ stationCoords, incidentCoords }) {
+// The backend returns a real routed path in geometry (GeoJSON LineString
+// of [lng, lat] coords). Until that data lands, or when the route fetch
+// fails, fall back to a plain 2-point straight line so the map never
+// crashes on missing data. Returns null when there's no geometry AND no
+// station coords to anchor a fallback line (nothing to draw).
+function buildLine({ stationCoords, incidentCoords, geometry }) {
+  const hasRoute =
+    geometry &&
+    geometry.type === "LineString" &&
+    Array.isArray(geometry.coordinates) &&
+    geometry.coordinates.length >= 2;
+
+  if (hasRoute) {
+    return { type: "Feature", geometry };
+  }
+
+  const hasStation =
+    stationCoords &&
+    stationCoords.lat != null &&
+    stationCoords.lng != null;
+
+  if (!hasStation) return null;
+
+  return {
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: [
+        [stationCoords.lng, stationCoords.lat],
+        [incidentCoords.lng, incidentCoords.lat],
+      ],
+    },
+  };
+}
+
+export default function RouteMap({ stationCoords, incidentCoords, geometry }) {
   const { containerRef, mapRef } = useMapboxMap({ center: incidentCoords, zoom: 13.5 });
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    const stationMarker = new mapboxgl.Marker({ color: "#2f80ed" })
-      .setLngLat([stationCoords.lng, stationCoords.lat])
-      .addTo(map);
     const incidentMarker = new mapboxgl.Marker({ color: "#e4572e" })
       .setLngLat([incidentCoords.lng, incidentCoords.lat])
       .addTo(map);
 
-    const line = {
-      type: "Feature",
-      geometry: {
-        type: "LineString",
-        // A straight line is a reasonable stand-in until the backend
-        // returns a real routed path (e.g. from Mapbox's Directions API);
-        // swap this for that response's `geometry` field once it exists.
-        coordinates: [
-          [stationCoords.lng, stationCoords.lat],
-          [incidentCoords.lng, incidentCoords.lat],
-        ],
-      },
-    };
+    const hasStation =
+      stationCoords &&
+      stationCoords.lat != null &&
+      stationCoords.lng != null;
+
+    let stationMarker = null;
+    if (hasStation) {
+      stationMarker = new mapboxgl.Marker({ color: "#2f80ed" })
+        .setLngLat([stationCoords.lng, stationCoords.lat])
+        .addTo(map);
+    }
+
+    const line = buildLine({ stationCoords, incidentCoords, geometry });
 
     function drawRoute() {
+      if (!line) return;
       if (map.getSource(ROUTE_SOURCE_ID)) {
         map.getSource(ROUTE_SOURCE_ID).setData(line);
         return;
@@ -57,16 +90,20 @@ export default function RouteMap({ stationCoords, incidentCoords }) {
       map.once("load", drawRoute);
     }
 
-    const bounds = new mapboxgl.LngLatBounds()
-      .extend([stationCoords.lng, stationCoords.lat])
-      .extend([incidentCoords.lng, incidentCoords.lat]);
-    map.fitBounds(bounds, { padding: 60 });
+    if (hasStation) {
+      const bounds = new mapboxgl.LngLatBounds()
+        .extend([stationCoords.lng, stationCoords.lat])
+        .extend([incidentCoords.lng, incidentCoords.lat]);
+      map.fitBounds(bounds, { padding: 60 });
+    } else {
+      map.jumpTo({ center: [incidentCoords.lng, incidentCoords.lat], zoom: 14 });
+    }
 
     return () => {
-      stationMarker.remove();
       incidentMarker.remove();
+      stationMarker?.remove();
     };
-  }, [stationCoords, incidentCoords, mapRef]);
+  }, [stationCoords, incidentCoords, geometry, mapRef]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

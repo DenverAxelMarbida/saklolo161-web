@@ -57,11 +57,28 @@ export const getWeatherRiver = async () => {
   };
 };
 
+// Fetches a driving route between two points. The backend already
+// degrades its own Directions API failures to a straight-line geometry
+// (same shape), so clients only handle the case where the whole request
+// fails (backend down) — see RouteMap's straight-line fallback.
+export const fetchRoute = async ({ fromLat, fromLng, toLat, toLng }) => {
+  const response = await api.get("/api/routes", {
+    params: { fromLat, fromLng, toLat, toLng },
+  });
+  const d = response.data.data;
+
+  return {
+    geometry: d.geometry,
+    distanceMeters: d.distanceMeters,
+    durationSeconds: d.durationSeconds,
+  };
+};
+
 // The backend serializes incidents in its own field casing/shape, but the
 // UI was built against the mock-data shape (see data/mockIncidents.js).
 // This normalizes every API incident into that expected shape so the map,
 // queue, and tally all stay in sync regardless of backend schema changes.
-const normalizeIncident = (i) => ({
+export const normalizeIncident = (i) => ({
   id: i.incidentId ?? i.id,
   category: (i.category || "").toUpperCase(),
   status: (i.status || "PENDING").toUpperCase(),
@@ -74,6 +91,7 @@ const normalizeIncident = (i) => ({
   elapsedMinutes: i.elapsedMinutes ?? 0,
   callerNotes: i.notes ?? i.callerNotes ?? "",
   evidence: i.evidence ?? [],
+  station: i.station || null,
   dispatch: i.dispatch || null,
   resolvedAt: i.resolvedAt ?? null,
 });

@@ -1,16 +1,49 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CATEGORIES } from "../lib/config";
-import { resolveIncident, markEnRoute } from "../lib/api";
+import { resolveIncident, markEnRoute, fetchRoute } from "../lib/api";
 import RouteMap from "./RouteMap";
 
 const STEPS = ["Pending", "Dispatched", "En Route", "Resolved"];
 
-// Static demo coords for the assigned station; a real build would get
-// this from the station record returned by the backend.
-const STATION_COORDS = { lat: 14.6455, lng: 121.101 };
-
 export default function DispatchTracker({ incident, onClose, onResolved, onStatusUpdated }) {
   const category = CATEGORIES[incident.category];
+
+  // The assigned station's coords come from the TOP-LEVEL incident record
+  // (incident.station.coords) — the backend exposes it there during Phase
+  // 3, not under incident.dispatch. No hardcoded station positions.
+  const stationCoords = incident.station?.coords;
+  const { lat: fromLat, lng: fromLng } = stationCoords || {};
+  const { lat: toLat, lng: toLng } = incident.coords || {};
+
+  const [route, setRoute] = useState(null);
+
+  // Fetch the real driving route whenever either endpoint moves. Keyed on
+  // the primitive coord values (not object refs) so the 10s poll cycle
+  // doesn't force a pointless re-fetch — a re-dispatched incident flows
+  // in with new station coords and this effect re-runs automatically.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRoute = async () => {
+      if (fromLat == null || fromLng == null || toLat == null || toLng == null) {
+        setRoute(null);
+        return;
+      }
+      try {
+        const result = await fetchRoute({ fromLat, fromLng, toLat, toLng });
+        if (!cancelled) setRoute(result);
+      } catch {
+        // Backend down / route unavailable — RouteMap degrades to the
+        // straight-line fallback and the metrics below show dashes.
+        if (!cancelled) setRoute(null);
+      }
+    };
+
+    loadRoute();
+    return () => {
+      cancelled = true;
+    };
+  }, [fromLat, fromLng, toLat, toLng]);
 
   // The stepper reflects the incident's REAL status field — never a
   // locally-guessed or hardcoded step index. Fall back to 0 if the
@@ -85,13 +118,19 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
         </div>
 
         <div className="h-64 md:h-80">
-          <RouteMap stationCoords={STATION_COORDS} incidentCoords={incident.coords} />
+          <RouteMap
+            stationCoords={stationCoords}
+            incidentCoords={incident.coords}
+            geometry={route?.geometry}
+          />
         </div>
 
         <div className="grid grid-cols-3 gap-3 border-t border-border p-4">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">Distance</div>
-            <div className="font-mono text-lg font-semibold">2.4 km</div>
+            <div className="font-mono text-lg font-semibold">
+              {route?.distanceMeters != null ? `${(route.distanceMeters / 1000).toFixed(1)} km` : "—"}
+            </div>
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">Status</div>
@@ -105,7 +144,11 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">ETA</div>
-            <div className="font-mono text-lg font-semibold">7 MIN</div>
+            <div className="font-mono text-lg font-semibold">
+              {route?.durationSeconds != null
+                ? `~${Math.ceil(route.durationSeconds / 60)} min`
+                : "—"}
+            </div>
           </div>
         </div>
 

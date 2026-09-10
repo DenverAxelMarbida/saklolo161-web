@@ -27,6 +27,24 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  // Keep the open tracker in sync with the freshest polled record for
+  // that incident. The dispatch/mark-en-route handlers already refresh()
+  // to pull authoritative state immediately; this lets a re-dispatched
+  // incident with new station coords refresh its route without the
+  // dispatcher closing and reopening the tracker. Only applies while the
+  // incident is still in the live-tracking flow — a record that moved out
+  // of DISPATCHED/EN ROUTE is left alone (the switcher below handles it).
+  useEffect(() => {
+    setSelectedIncident((prev) => {
+      if (!prev) return prev;
+      const fresh = incidents.find((i) => i.id === prev.id);
+      if (!fresh) return prev;
+      const freshStatus = (fresh.status || "").toUpperCase();
+      if (!["DISPATCHED", "EN ROUTE"].includes(freshStatus)) return prev;
+      return fresh;
+    });
+  }, [incidents]);
+
   const handleDispatched = (updatedIncident) => {
     setSelectedIncident(updatedIncident);
     refresh(); // pull the authoritative state immediately rather than waiting up to 10s

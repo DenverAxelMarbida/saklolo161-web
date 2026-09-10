@@ -89,14 +89,24 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
               <div>
                 <h3 className="text-xs uppercase tracking-wide text-ink-dim">Evidence</h3>
                 <div className="mt-1 flex flex-wrap gap-2">
-                  {incident.evidence.map((file) => (
-                    <span
-                      key={file}
-                      className="rounded-full border border-border bg-bg px-2.5 py-1 text-xs text-ink-dim"
-                    >
-                      📎 {file}
-                    </span>
-                  ))}
+                  {incident.evidence.map((file, i) => {
+                    // Backend evidence entries are objects ({ fileId, url,
+                    // mimeType }); mock/fallback data can still be plain
+                    // filenames. Show the metadata either way — URLs may be
+                    // empty until the Firebase Storage cutover, so no
+                    // previews here (see ResolvedDetailModal for those).
+                    const label =
+                      typeof file === "string" ? file : file?.fileId || file?.url || null;
+                    if (!label) return null;
+                    return (
+                      <span
+                        key={file?.fileId ?? i}
+                        className="rounded-full border border-border bg-bg px-2.5 py-1 text-xs text-ink-dim"
+                      >
+                        📎 {label}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             )}
