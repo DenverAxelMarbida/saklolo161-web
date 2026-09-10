@@ -48,6 +48,18 @@ export default function App() {
     refresh();
   };
 
+  // While a modal/tracker is open, keep `selectedIncident` pointed at the
+  // freshest polled copy of that incident. The backend attaches
+  // `station.coords`, `evidence`, and status changes AFTER dispatch; if we
+  // froze the local snapshot the tracker would never learn about them (a
+  // dispatched incident would sit on "—" for Distance/ETA until the card was
+  // closed and re-opened). This syncs those fields in on every poll tick.
+  useEffect(() => {
+    if (!selectedIncident) return;
+    const fresh = incidents.find((i) => i.id === selectedIncident.id);
+    if (fresh) setSelectedIncident(fresh);
+  }, [incidents, selectedIncident]);
+
   if (!authState) {
     return <Login onSuccess={() => {}} />;
   }
