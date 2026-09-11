@@ -148,7 +148,7 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-3 border-t border-border p-4">
+        <div className="grid grid-cols-4 gap-3 border-t border-border p-4">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">Distance</div>
             <div className="font-mono text-lg font-semibold">
@@ -172,6 +172,12 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
               {durationSeconds != null
                 ? `~${Math.round(durationSeconds / 60)} min`
                 : "—"}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-ink-dim">Turnout</div>
+            <div className="font-mono text-lg font-semibold">
+              {incident.dispatch?.estimatedTurnout ?? "—"}
             </div>
           </div>
         </div>
