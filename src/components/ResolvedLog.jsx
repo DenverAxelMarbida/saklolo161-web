@@ -39,9 +39,7 @@ export default function ResolvedLog({ incidents, query }) {
         >
           <div className="flex items-center justify-between">
             <span className="font-mono text-xs text-ink-dim">#{incident.id}</span>
-            <span className="font-mono text-xs text-ink-dim">
-              {incident.elapsedMinutes ? `${incident.elapsedMinutes}m ago` : "Resolved"}
-            </span>
+            <span className="font-mono text-xs text-ink-dim">Resolved</span>
           </div>
           <div className="mt-1 text-sm">{incident.location}</div>
           <span className="mt-2 inline-block rounded border border-resolved/40 bg-resolved/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-resolved">
