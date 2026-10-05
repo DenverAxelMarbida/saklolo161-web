@@ -22,13 +22,14 @@ function makeIncident(overrides = {}) {
   };
 }
 
-function renderQueue(incidents) {
+function renderQueue(incidents, newIncidentIds = []) {
   return render(
     <ActiveQueue
       incidents={incidents}
       onSelectIncident={() => {}}
       activeFilter="ALL"
       onFilterChange={() => {}}
+      newIncidentIds={newIncidentIds}
     />,
   );
 }
@@ -63,5 +64,47 @@ describe("ActiveQueue", () => {
     ]);
 
     expect(screen.getByText(/⚠ 1 failed/)).toBeTruthy();
+  });
+});
+
+describe("ActiveQueue — new incident highlight", () => {
+  it("badges and animates a row whose id is flagged as new", () => {
+    const { container } = renderQueue(
+      [makeIncident({ id: "INC-NEW-1" }), makeIncident({ id: "INC-OLD-2" })],
+      ["INC-NEW-1"],
+    );
+
+    expect(screen.getByText("New Incident")).toBeTruthy();
+
+    const rows = container.querySelectorAll("button.w-full");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].className).toContain("animate-pop-in");
+    expect(rows[1].className).not.toContain("animate-pop-in");
+    expect(screen.getAllByText("New Incident")).toHaveLength(1);
+  });
+
+  it("shows no badge or highlight when nothing is new", () => {
+    const { container } = renderQueue([makeIncident()]);
+
+    expect(screen.queryByText("New Incident")).toBeNull();
+    const row = container.querySelector("button.w-full");
+    expect(row.className).not.toContain("animate-pop-in");
+  });
+
+  it("keeps evidence badges intact alongside the new badge", () => {
+    renderQueue(
+      [
+        makeIncident({
+          id: "INC-EV-1",
+          evidenceUploading: true,
+          evidence: [{ fileId: "ev-1", url: "" }],
+          evidenceExpectedCount: 3,
+        }),
+      ],
+      ["INC-EV-1"],
+    );
+
+    expect(screen.getByText("New Incident")).toBeTruthy();
+    expect(screen.getByText(/⏳ attaching evidence 1\/3/)).toBeTruthy();
   });
 });
