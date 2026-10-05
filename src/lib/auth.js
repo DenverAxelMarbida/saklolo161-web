@@ -20,10 +20,19 @@ import {
 // persisted to localStorage anymore. A synchronous in-memory cache keeps
 // api.js's request interceptor (`getStoredAuth()` in a sync context) working
 // while Firebase refreshes ID tokens in the background.
+//
+// Refresh bootstrap: a minimal { token, user, exp } snapshot (below) lets
+// getStoredAuth() recover the last known auth synchronously right after a
+// page reload, so the first protected poll carries a Bearer header instead
+// of racing the async Firebase session restore into a spurious 401 ->
+// logout() -> signOut() chain. The snapshot is short-lived, expiration-
+// checked on every read, and always cleared the moment Firebase (the sole
+// authority) reports signed out.
 // ---------------------------------------------------------------------------
 
 const LEGACY_TOKEN_KEY = "saklolo_token";
 const LEGACY_USER_KEY = "saklolo_user";
+const SNAPSHOT_KEY = "saklolo_auth_snapshot";
 
 // One-time migration: drop any Phase 2 JWT still sitting in localStorage
 // so a stale token can never masquerade as a session.
@@ -42,6 +51,10 @@ let authCache = null;
 
 let authInstance = null;
 let unsubscribeFirebase = null;
+
+// True once Firebase's onIdTokenChanged has delivered its first emission
+// (user or null) — i.e. the initial session restore has completed.
+let initialEmissionReceived = false;
 
 // ---------------------------------------------------------------------------
 // Firebase bootstrap (lazy, once)
@@ -86,16 +99,83 @@ function clearLegacyStorage() {
   }
 }
 
+function clearSnapshot() {
+  try {
+    localStorage.removeItem(SNAPSHOT_KEY);
+  } catch {
+    // Storage unavailable — nothing to clear.
+  }
+}
+
+function writeSnapshot(authValue, expMs) {
+  try {
+    localStorage.setItem(
+      SNAPSHOT_KEY,
+      JSON.stringify({ token: authValue.token, user: authValue.user, exp: expMs }),
+    );
+  } catch {
+    // Storage unavailable — bootstrap degrades to the pre-snapshot behavior.
+  }
+}
+
 /**
- * Stores { token, user } (or null) in the synchronous cache and notifies
+ * Reads the persisted snapshot, enforcing freshness on every read: an
+ * expired (or malformed) snapshot is deleted and treated as absent, so a
+ * stale token is never handed back to api.js.
+ */
+function readSnapshot() {
+  let raw;
+  try {
+    raw = localStorage.getItem(SNAPSHOT_KEY);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  try {
+    const snap = JSON.parse(raw);
+    const wellFormed =
+      typeof snap?.token === "string" &&
+      snap.token.length > 0 &&
+      typeof snap?.user?.uid === "string" &&
+      snap.user.uid.length > 0 &&
+      typeof snap?.user?.agency === "string" &&
+      snap.user.agency.length > 0 &&
+      typeof snap?.user?.role === "string" &&
+      snap.user.role.length > 0 &&
+      typeof snap?.exp === "number";
+    if (!wellFormed || Date.now() >= snap.exp) {
+      clearSnapshot();
+      return null;
+    }
+    return snap;
+  } catch {
+    clearSnapshot();
+    return null;
+  }
+}
+
+/** Epoch-ms expiration from a getIdTokenResult(), or undefined if absent. */
+function expFromTokenResult(tokenResult) {
+  const exp = Date.parse(tokenResult?.expirationTime ?? "");
+  return Number.isNaN(exp) ? undefined : exp;
+}
+
+/**
+ * Stores { token, user } (or null) in the synchronous cache, mirrors it
+ * into the persisted snapshot (or drops the snapshot on null), and notifies
  * listeners only when the auth value actually changed (same token => no
  * duplicate notifications, e.g. login() and the Firebase listener racing).
  */
-function updateAuthCache(next) {
+function updateAuthCache(next, expMs) {
   const bothNull = authCache === null && next === null;
   const sameToken =
     authCache !== null && next !== null && authCache.token === next.token;
   authCache = next;
+  if (next === null) {
+    clearSnapshot();
+  } else if (typeof expMs === "number") {
+    writeSnapshot(next, expMs);
+  }
   if (!bothNull && !sameToken) {
     notifyListeners(next);
   }
@@ -161,14 +241,22 @@ function ensureFirebaseSubscription() {
   if (unsubscribeFirebase) return;
 
   unsubscribeFirebase = onIdTokenChanged(getFirebaseAuth(), async (firebaseUser) => {
+    // First emission = Firebase's initial session restore has resolved.
+    initialEmissionReceived = true;
     if (!firebaseUser) {
+      // Genuine signed-out state: drop the snapshot so no persisted token
+      // can outlive Firebase's authority, then push null to subscribers.
+      clearSnapshot();
       updateAuthCache(null);
       return;
     }
     try {
       const tokenResult = await firebaseUser.getIdTokenResult();
       const user = await buildUser(firebaseUser, tokenResult.claims);
-      updateAuthCache({ token: tokenResult.token, user });
+      updateAuthCache(
+        { token: tokenResult.token, user },
+        expFromTokenResult(tokenResult),
+      );
     } catch {
       // Missing claims or token fetch failure: never emit an invalid
       // authenticated user — treat the session as signed out.
@@ -182,11 +270,20 @@ function ensureFirebaseSubscription() {
 // ---------------------------------------------------------------------------
 
 /**
- * Synchronous read of the current { token, user } (or null) from the
- * in-memory cache. api.js's request interceptor depends on this staying
- * synchronous — it never awaits Firebase.
+ * Synchronous read of the current { token, user } (or null). api.js's
+ * request interceptor depends on this staying synchronous — it never
+ * awaits Firebase. On a fresh page load (empty in-memory cache) it
+ * bootstraps from the persisted snapshot when that snapshot is present,
+ * well-formed, and unexpired; otherwise it returns null and the expired
+ * snapshot is cleared.
  */
 export function getStoredAuth() {
+  if (!authCache) {
+    const snap = readSnapshot();
+    if (snap) {
+      authCache = { token: snap.token, user: { ...snap.user } };
+    }
+  }
   if (!authCache) return null;
   return { token: authCache.token, user: { ...authCache.user } };
 }
@@ -211,10 +308,12 @@ export async function login(email, password) {
   }
 
   let nextAuth;
+  let nextExp;
   try {
     const tokenResult = await credential.user.getIdTokenResult();
     const user = await buildUser(credential.user, tokenResult.claims);
     nextAuth = { token: tokenResult.token, user };
+    nextExp = expFromTokenResult(tokenResult);
   } catch (err) {
     await signOut(getFirebaseAuth()).catch(() => {});
     updateAuthCache(null);
@@ -223,19 +322,29 @@ export async function login(email, password) {
     throw err?.response ? err : toLoginError(err);
   }
 
-  updateAuthCache(nextAuth);
+  updateAuthCache(nextAuth, nextExp);
   return { token: nextAuth.token, user: { ...nextAuth.user } };
 }
 
 /**
- * Signs out of Firebase, empties the synchronous cache, clears any
- * leftover Phase 2 localStorage keys, and notifies subscribers with null.
+ * Signs out of Firebase, empties the synchronous cache, drops the
+ * persisted snapshot, clears any leftover Phase 2 localStorage keys, and
+ * notifies subscribers with null.
+ *
+ * Restore-window guard: while Firebase's initial restore has not yet
+ * delivered its first emission AND there is no authenticated cache state
+ * to sign out, the call can only be api.js's premature 401 interceptor
+ * reacting to a headerless request that raced the restore — signOut()
+ * would destroy the still-restoring session, so it is skipped. Any
+ * logout() once Firebase has initialized (or with an authenticated cache,
+ * e.g. right after login()) behaves exactly as before.
  */
 export function logout() {
   clearLegacyStorage();
+  const hadAuthenticatedState = authCache !== null;
   updateAuthCache(null);
 
-  if (unsubscribeFirebase) {
+  if (unsubscribeFirebase && (initialEmissionReceived || hadAuthenticatedState)) {
     // The shared listener confirms the sign-out; failures here are
     // non-fatal (the cache is already cleared and listeners notified).
     signOut(getFirebaseAuth()).catch(() => {});

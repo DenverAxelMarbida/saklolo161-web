@@ -50,7 +50,11 @@ function makeFirebaseUser({
   return {
     uid,
     email,
-    getIdTokenResult: vi.fn(async () => ({ token, claims })),
+    getIdTokenResult: vi.fn(async () => ({
+      token,
+      claims,
+      expirationTime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    })),
   };
 }
 
@@ -333,6 +337,140 @@ describe("Firebase token refresh and state changes", () => {
     expect(auth.getStoredAuth()).toBeNull();
     expect(cb).toHaveBeenLastCalledWith(null);
 
+    unsubscribe();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Refresh-session race fix: persisted snapshot bootstrap + restore-window
+// logout guard (see src/lib/auth.js).
+// ---------------------------------------------------------------------------
+
+const SNAPSHOT_KEY = "saklolo_auth_snapshot";
+
+function seedSnapshot({
+  token = "snap-token",
+  exp = Date.now() + 60_000,
+} = {}) {
+  localStorage.setItem(
+    SNAPSHOT_KEY,
+    JSON.stringify({
+      token,
+      user: {
+        uid: "u1",
+        email: "officer@marikina.gov",
+        agency: "FLOOD",
+        role: "dispatcher",
+      },
+      exp,
+    }),
+  );
+}
+
+describe("persisted snapshot bootstrap (refresh race fix)", () => {
+  it("D: hydrates getStoredAuth() synchronously from a valid snapshot after refresh", () => {
+    seedSnapshot();
+    expect(auth.getStoredAuth()).toEqual({
+      token: "snap-token",
+      user: {
+        uid: "u1",
+        email: "officer@marikina.gov",
+        agency: "FLOOD",
+        role: "dispatcher",
+      },
+    });
+  });
+
+  it("D2: onAuthChange's immediate fire carries the snapshot (no login flash)", () => {
+    seedSnapshot();
+    const cb = vi.fn();
+    const unsubscribe = auth.onAuthChange(cb);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "snap-token" }),
+    );
+    unsubscribe();
+  });
+
+  it("E: rejects an expired snapshot — returns null and clears it", () => {
+    seedSnapshot({ exp: Date.now() - 1_000 });
+    expect(auth.getStoredAuth()).toBeNull();
+    expect(localStorage.getItem(SNAPSHOT_KEY)).toBeNull();
+  });
+
+  it("persists a snapshot on successful login with a future expiration", async () => {
+    await auth.login("flood@marikina.gov.ph", "changeme123");
+    const snap = JSON.parse(localStorage.getItem(SNAPSHOT_KEY));
+    expect(snap.token).toBe("id-token-1");
+    expect(snap.user).toMatchObject({
+      uid: "u1",
+      agency: "FLOOD",
+      role: "dispatcher",
+    });
+    expect(snap.exp).toBeGreaterThan(Date.now());
+  });
+
+  it("F: the first Firebase auth emission replaces the persisted snapshot", async () => {
+    seedSnapshot({ token: "snap-token" });
+    const cb = vi.fn();
+    const unsubscribe = auth.onAuthChange(cb);
+    expect(auth.getStoredAuth().token).toBe("snap-token");
+
+    const firebaseCallback = lastFirebaseListener();
+    await firebaseCallback(makeFirebaseUser({ token: "id-token-9" }));
+
+    expect(cb).toHaveBeenLastCalledWith(
+      expect.objectContaining({ token: "id-token-9" }),
+    );
+    expect(auth.getStoredAuth().token).toBe("id-token-9");
+    expect(JSON.parse(localStorage.getItem(SNAPSHOT_KEY)).token).toBe(
+      "id-token-9",
+    );
+    unsubscribe();
+  });
+
+  it("refresh: an ID-token rotation updates the persisted snapshot too", async () => {
+    await auth.login("flood@marikina.gov.ph", "changeme123");
+    const firebaseCallback = lastFirebaseListener();
+    await firebaseCallback(makeFirebaseUser({ token: "id-token-2" }));
+    expect(JSON.parse(localStorage.getItem(SNAPSHOT_KEY)).token).toBe(
+      "id-token-2",
+    );
+  });
+
+  it("G: genuine Firebase null clears the snapshot and notifies null", async () => {
+    seedSnapshot();
+    const cb = vi.fn();
+    const unsubscribe = auth.onAuthChange(cb);
+    expect(auth.getStoredAuth()).not.toBeNull();
+
+    const firebaseCallback = lastFirebaseListener();
+    await firebaseCallback(null);
+
+    expect(cb).toHaveBeenLastCalledWith(null);
+    expect(auth.getStoredAuth()).toBeNull();
+    expect(localStorage.getItem(SNAPSHOT_KEY)).toBeNull();
+    unsubscribe();
+  });
+
+  it("H: premature logout during the restore window skips signOut; logout after init still signs out", async () => {
+    // No snapshot + no login + no Firebase emission yet = restore window.
+    const cb = vi.fn();
+    const unsubscribe = auth.onAuthChange(cb);
+    auth.logout(); // stands in for api.js's premature 401 interceptor
+    expect(state.signOut).not.toHaveBeenCalled();
+    expect(auth.getStoredAuth()).toBeNull();
+
+    // Firebase finishes restoring — the session survived the premature call.
+    const firebaseCallback = lastFirebaseListener();
+    await firebaseCallback(makeFirebaseUser());
+    expect(auth.getStoredAuth()).not.toBeNull();
+
+    // Normal logout once initialized signs out exactly as before.
+    auth.logout();
+    expect(state.signOut).toHaveBeenCalledTimes(1);
+    expect(auth.getStoredAuth()).toBeNull();
+    expect(cb).toHaveBeenLastCalledWith(null);
     unsubscribe();
   });
 });
