@@ -117,7 +117,20 @@ export const getIncidents = async () => {
   const response = await api.get("/api/incidents");
   const d = response.data?.data ?? response.data;
   if (!Array.isArray(d)) return [];
-  return d.map(normalizeIncident);
+
+  return d
+    .filter((incident) => {
+      // Historical Firebase records were never reverse-geocoded: they carry
+      // the "Unknown location" placeholder (or no address at all). Drop them
+      // before normalize so queue/map/category-tally all agree. Legacy
+      // incidents store location as a plain string — keep those.
+      const address =
+        typeof incident.location === "string"
+          ? incident.location
+          : incident.location?.address;
+      return address && address !== "Unknown location";
+    })
+    .map(normalizeIncident);
 };
 
 export const dispatchIncident = async ({
