@@ -65,6 +65,7 @@ export default function ControlRoom({
           incidents={incidents}
           onSelectIncident={onSelectIncident}
           activeFilter={activeFilter}
+          newIncidentIds={newIncidentIds}
         />
       </section>
 

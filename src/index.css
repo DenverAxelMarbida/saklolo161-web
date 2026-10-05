@@ -194,11 +194,34 @@ body {
   animation: sak-button-flash 0.6s ease-out 1;
 }
 
+/* New-incident marker pulse — amber ring (never mint green, which is
+   reserved for the resolved state). Animates box-shadow only, never
+   transform: Mapbox positions marker elements via their transform, so
+   animating it would rip pins off their coordinates. 5 x 0.9s = 4.5s,
+   matching the new-incident toast's lifetime; the class itself also
+   drops off on the next 10s poll once the ID is no longer new. */
+@keyframes sak-marker-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 180, 0, 0.75);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(244, 180, 0, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 180, 0, 0);
+  }
+}
+
+.animate-marker-pulse {
+  animation: sak-marker-pulse 0.9s ease-out 5;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-step-pulse,
   .animate-pop-in,
   .animate-slide-up,
-  .animate-button-flash {
+  .animate-button-flash,
+  .animate-marker-pulse {
     animation: none;
   }
 }
