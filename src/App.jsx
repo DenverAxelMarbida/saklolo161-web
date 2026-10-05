@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Header from "./components/Header";
 import Login from "./components/Login";
 import ControlRoom from "./components/ControlRoom";
 import TriageModal from "./components/TriageModal";
 import DispatchTracker from "./components/DispatchTracker";
+import NewIncidentToast from "./components/NewIncidentToast";
 import { useIncidentPolling } from "./hooks/useIncidentPolling";
 import { onAuthChange, logout } from "./lib/auth";
 
@@ -16,8 +17,30 @@ import { onAuthChange, logout } from "./lib/auth";
 // sync with the incident it's describing.
 export default function App() {
   const [authState, setAuthState] = useState(null);
-  const { incidents, refresh } = useIncidentPolling();
+  const { incidents, refresh, newIncidentIds } = useIncidentPolling();
   const [selectedIncident, setSelectedIncident] = useState(null);
+  const [newIncidentToast, setNewIncidentToast] = useState(null);
+
+  // Session-wide record of already-announced IDs, so a batch can never
+  // toast the same incident twice (even across filter switches or
+  // remounts of the queue). A ref: never triggers a render by itself.
+  const toastedIdsRef = useRef(new Set());
+
+  // ControlRoom calls this with the new incidents that are actually
+  // visible under the dispatcher's current filter. Keeps the newest
+  // batch on screen (replacing any still-visible older one).
+  const handleVisibleNewIncidents = useCallback((visible) => {
+    const fresh = visible.filter(
+      (incident) => !toastedIdsRef.current.has(incident.id),
+    );
+    if (fresh.length === 0) return;
+    for (const incident of fresh) toastedIdsRef.current.add(incident.id);
+    setNewIncidentToast({
+      id: fresh[0].id,
+      category: fresh[0].category,
+      count: fresh.length,
+    });
+  }, []);
 
   // Subscribe to auth-state changes once on mount. onAuthChange fires
   // the callback immediately with whatever's in localStorage, so
@@ -91,8 +114,17 @@ export default function App() {
           incidents={incidents}
           onSelectIncident={setSelectedIncident}
           initialAgency={authState.user.agency}
+          newIncidentIds={newIncidentIds}
+          onVisibleNewIncidents={handleVisibleNewIncidents}
         />
       </main>
+
+      {newIncidentToast && (
+        <NewIncidentToast
+          toast={newIncidentToast}
+          onClose={() => setNewIncidentToast(null)}
+        />
+      )}
 
       {selectedIncident && !isDispatchedFlow && (
         <TriageModal

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import WeatherCard from "./WeatherCard";
 import RiverLevelCard from "./RiverLevelCard";
 import CategoryTally from "./CategoryTally";
@@ -7,7 +7,13 @@ import ActiveQueue from "./ActiveQueue";
 import ResolvedLog from "./ResolvedLog";
 import { useWeatherRiver } from "../hooks/useWeatherRiver";
 
-export default function ControlRoom({ incidents, onSelectIncident, initialAgency }) {
+export default function ControlRoom({
+  incidents,
+  onSelectIncident,
+  initialAgency,
+  newIncidentIds = [],
+  onVisibleNewIncidents,
+}) {
   // The category filter is shared between the queue, the map markers,
   // and the tally grid, so it lives here as ControlRoom state and is
   // passed down as props — not owned by any single child.
@@ -22,6 +28,25 @@ export default function ControlRoom({ incidents, onSelectIncident, initialAgency
   const [queueView, setQueueView] = useState("active");
   const [resolvedQuery, setResolvedQuery] = useState("");
   const { weather, river, loading } = useWeatherRiver();
+
+  // Only surface a new incident to the toast when it would actually be
+  // visible in this dispatcher's current view (category filter + not
+  // resolved). The App layer dedupes IDs that were already toasted, so
+  // re-running this effect on every poll is harmless; it also means an
+  // incident becomes toastable the moment the dispatcher switches to a
+  // filter that includes it.
+  useEffect(() => {
+    if (!onVisibleNewIncidents || newIncidentIds.length === 0) return;
+    const visible = newIncidentIds
+      .map((id) => incidents.find((incident) => incident.id === id))
+      .filter(
+        (incident) =>
+          incident &&
+          incident.status !== "RESOLVED" &&
+          (activeFilter === "ALL" || incident.category === activeFilter),
+      );
+    if (visible.length > 0) onVisibleNewIncidents(visible);
+  }, [newIncidentIds, incidents, activeFilter, onVisibleNewIncidents]);
 
   return (
     <div className="grid h-full grid-cols-[280px_1fr_320px] gap-3 p-3">
@@ -71,6 +96,7 @@ export default function ControlRoom({ incidents, onSelectIncident, initialAgency
             onSelectIncident={onSelectIncident}
             activeFilter={activeFilter}
             onFilterChange={setActiveFilter}
+            newIncidentIds={newIncidentIds}
           />
         ) : (
           <div className="flex h-full flex-col">

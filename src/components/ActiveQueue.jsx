@@ -14,6 +14,7 @@ export default function ActiveQueue({
   onSelectIncident,
   activeFilter,
   onFilterChange,
+  newIncidentIds = [],
 }) {
   const pending = useMemo(
     () => incidents.filter((i) => i.status !== "RESOLVED"),
@@ -60,44 +61,54 @@ export default function ActiveQueue({
             No {activeFilter === "ALL" ? "" : activeFilter.toLowerCase()} incidents in queue.
           </p>
         )}
-        {filtered.map((incident) => (
-          <button
-            key={incident.id}
-            onClick={() => onSelectIncident(incident)}
-            className="w-full rounded-md border border-border bg-panel p-3 text-left transition-colors hover:bg-panel-hover"
-            style={{ borderLeft: `3px solid ${CATEGORIES[incident.category].color}` }}
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xs text-ink-dim">#{incident.id}</span>
-              <span className="font-mono text-xs text-ink-dim">{incident.elapsedMinutes}m ago</span>
-            </div>
-            <div className="mt-1 text-sm">{incident.location}</div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span
-                className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                  STATUS_STYLES[incident.status] || STATUS_STYLES.PENDING
-                }`}
-              >
-                {incident.status}
-              </span>
-              {incident.evidenceUploading && (
-                <span className="inline-block rounded border border-risk-mid/40 px-1.5 py-0.5 text-[10px] font-semibold text-risk-mid">
-                  ⏳ attaching evidence {incident.evidence.length}/{incident.evidenceExpectedCount}
-                </span>
-              )}
-              {incident.evidenceFailedCount > 0 && (
+        {filtered.map((incident) => {
+          const isNew = newIncidentIds.includes(incident.id);
+          return (
+            <button
+              key={incident.id}
+              onClick={() => onSelectIncident(incident)}
+              className={`w-full rounded-md border border-border bg-panel p-3 text-left transition-colors hover:bg-panel-hover${
+                isNew ? " animate-pop-in" : ""
+              }`}
+              style={{ borderLeft: `3px solid ${CATEGORIES[incident.category].color}` }}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs text-ink-dim">#{incident.id}</span>
+                <span className="font-mono text-xs text-ink-dim">{incident.elapsedMinutes}m ago</span>
+              </div>
+              <div className="mt-1 text-sm">{incident.location}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <span
-                  className="inline-block rounded border border-fire/40 px-1.5 py-0.5 text-[10px] font-semibold text-fire"
-                  title={`${incident.evidenceFailedCount} attachment${
-                    incident.evidenceFailedCount === 1 ? "" : "s"
-                  } failed to upload`}
+                  className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                    STATUS_STYLES[incident.status] || STATUS_STYLES.PENDING
+                  }`}
                 >
-                  ⚠ {incident.evidenceFailedCount} failed
+                  {incident.status}
                 </span>
-              )}
-            </div>
-          </button>
-        ))}
+                {isNew && (
+                  <span className="inline-block rounded border border-risk-mid/50 bg-risk-mid/15 px-1.5 py-0.5 text-[10px] font-bold text-risk-mid">
+                    New Incident
+                  </span>
+                )}
+                {incident.evidenceUploading && (
+                  <span className="inline-block rounded border border-risk-mid/40 px-1.5 py-0.5 text-[10px] font-semibold text-risk-mid">
+                    ⏳ attaching evidence {incident.evidence.length}/{incident.evidenceExpectedCount}
+                  </span>
+                )}
+                {incident.evidenceFailedCount > 0 && (
+                  <span
+                    className="inline-block rounded border border-fire/40 px-1.5 py-0.5 text-[10px] font-semibold text-fire"
+                    title={`${incident.evidenceFailedCount} attachment${
+                      incident.evidenceFailedCount === 1 ? "" : "s"
+                    } failed to upload`}
+                  >
+                    ⚠ {incident.evidenceFailedCount} failed
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
