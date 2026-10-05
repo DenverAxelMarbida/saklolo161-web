@@ -316,4 +316,44 @@ describe("getIncidents", () => {
 
     expect(await getIncidents()).toEqual([]);
   });
+
+  it("drops incidents without a usable address and keeps real ones", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        data: [
+          // Historical record: never reverse-geocoded -> must not display.
+          {
+            incidentId: "INC-OLD-1",
+            location: {
+              latitude: 14.6507,
+              longitude: 121.1029,
+              address: "Unknown location",
+            },
+          },
+          // No address at all -> placeholder would show -> must not display.
+          { incidentId: "INC-OLD-2", location: { latitude: 14.6, longitude: 121.1 } },
+          // New reverse-geocoded incident -> keep.
+          {
+            incidentId: "INC-20261005-5320",
+            location: {
+              address: "Sto. Nino, Marikina City",
+              latitude: 14.6395,
+              longitude: 121.108,
+            },
+          },
+          // Legacy plain-string location with a real address -> keep.
+          { incidentId: "MEDICAL-24-0002", location: "Riverbanks, Marikina City" },
+        ],
+      },
+    });
+
+    const incidents = await getIncidents();
+
+    expect(incidents.map((i) => i.id)).toEqual([
+      "INC-20261005-5320",
+      "MEDICAL-24-0002",
+    ]);
+    expect(incidents[0].location).toBe("Sto. Nino, Marikina City");
+    expect(incidents[1].location).toBe("Riverbanks, Marikina City");
+  });
 });
