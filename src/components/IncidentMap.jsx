@@ -31,7 +31,7 @@ function tooltipHTML(incident) {
   `;
 }
 
-export default function IncidentMap({ incidents, onSelectIncident, activeFilter }) {
+export default function IncidentMap({ incidents, onSelectIncident, activeFilter, newIncidentIds = [] }) {
   const { containerRef, mapRef } = useMapboxMap({ zoom: 12.5 });
 
   // Markers are plain mapboxgl.Marker objects, not React elements — they
@@ -63,6 +63,14 @@ export default function IncidentMap({ incidents, onSelectIncident, activeFilter 
         el.style.cursor = "pointer";
         el.style.backgroundColor = CATEGORIES[incident.category]?.color || "#334155";
 
+        // Flags only the marker of an incident the 10s poll just flagged
+        // as new; older markers are rendered exactly as before. The class
+        // disappears on the next poll (newIncidentIds is replaced every
+        // fetch), so nothing pulses forever.
+        if (newIncidentIds.includes(incident.id)) {
+          el.classList.add("animate-marker-pulse");
+        }
+
         el.addEventListener("click", () => onSelectIncident(incident));
 
         const popup = new mapboxgl.Popup({
@@ -91,7 +99,7 @@ export default function IncidentMap({ incidents, onSelectIncident, activeFilter 
     // markers happens at the top of the next run, and final cleanup on
     // unmount is handled by useMapboxMap removing the whole map (which
     // takes its markers with it).
-  }, [incidents, mapRef, onSelectIncident, activeFilter]);
+  }, [incidents, mapRef, onSelectIncident, activeFilter, newIncidentIds]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
