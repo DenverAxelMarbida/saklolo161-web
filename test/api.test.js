@@ -4,16 +4,21 @@ import {
   getWeatherRiver,
   fetchRoute,
   getIncidents,
+  listUsers,
+  createUser,
+  updateUser,
+  setUserEnabled,
 } from "../src/lib/api";
 import { resolveMediaUrl } from "../src/lib/api";
 
-const { mockGet, mockPost, apiInstance } = vi.hoisted(() => {
+const { mockGet, mockPost, mockPatch, apiInstance } = vi.hoisted(() => {
   const mockGet = vi.fn();
   const mockPost = vi.fn();
   const mockPatch = vi.fn();
   return {
     mockGet,
     mockPost,
+    mockPatch,
     apiInstance: {
       get: mockGet,
       post: mockPost,
@@ -355,5 +360,56 @@ describe("getIncidents", () => {
     ]);
     expect(incidents[0].location).toBe("Sto. Nino, Marikina City");
     expect(incidents[1].location).toBe("Riverbanks, Marikina City");
+  });
+});
+
+describe("user management endpoints", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("listUsers GETs /api/users and returns the data list", async () => {
+    const users = [{ uid: "u1", email: "a@b.ph", agency: "ALL", role: "admin", disabled: false, createdAt: null }];
+    mockGet.mockResolvedValue({ data: { success: true, data: users } });
+
+    const result = await listUsers();
+
+    expect(mockGet).toHaveBeenCalledWith("/api/users");
+    expect(result).toEqual(users);
+  });
+
+  it("createUser POSTs /api/users with the full payload", async () => {
+    mockPost.mockResolvedValue({ data: { success: true, data: { uid: "u2" } } });
+
+    const payload = {
+      email: "new@marikina.gov.ph",
+      password: "secret123",
+      agency: "FLOOD",
+      role: "dispatcher",
+    };
+    const result = await createUser(payload);
+
+    expect(mockPost).toHaveBeenCalledWith("/api/users", payload);
+    expect(result.success).toBe(true);
+  });
+
+  it("updateUser PATCHes /api/users/:uid with the changed fields", async () => {
+    mockPatch.mockResolvedValue({ data: { success: true, data: { uid: "u1" } } });
+
+    const result = await updateUser("u1", { agency: "FLOOD", role: "admin" });
+
+    expect(mockPatch).toHaveBeenCalledWith("/api/users/u1", {
+      agency: "FLOOD",
+      role: "admin",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("setUserEnabled PATCHes /api/users/:uid/status with { enabled }", async () => {
+    mockPatch.mockResolvedValue({ data: { success: true, data: { uid: "u1" } } });
+
+    await setUserEnabled("u1", false);
+    expect(mockPatch).toHaveBeenCalledWith("/api/users/u1/status", { enabled: false });
+
+    await setUserEnabled("u1", true);
+    expect(mockPatch).toHaveBeenLastCalledWith("/api/users/u1/status", { enabled: true });
   });
 });

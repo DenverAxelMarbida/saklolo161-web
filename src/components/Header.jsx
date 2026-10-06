@@ -1,4 +1,4 @@
-export default function Header({ dutyOfficer, onLogout }) {
+export default function Header({ dutyOfficer, role, view, onNavigate, onLogout }) {
   // Duty officer is required — the signed-in dispatcher's email (mock
   // users have no display names, so email is the readable identifier).
   const displayName = dutyOfficer || "Dispatcher";
@@ -7,6 +7,10 @@ export default function Header({ dutyOfficer, onLogout }) {
     .map((part) => part[0])
     .join("")
     .toUpperCase();
+
+  // UX gating only — the real security boundary is the backend's
+  // verifyAuth + requireAdmin (403 for non-admins) on /api/users.
+  const isAdmin = role === "admin";
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-header px-4">
@@ -25,6 +29,22 @@ export default function Header({ dutyOfficer, onLogout }) {
       </div>
 
       <div className="flex items-center gap-2">
+        {isAdmin &&
+          (view === "users" ? (
+            <button
+              onClick={() => onNavigate("control")}
+              className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-ink-dim transition-colors hover:text-ink"
+            >
+              Control Room
+            </button>
+          ) : (
+            <button
+              onClick={() => onNavigate("users")}
+              className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-ink-dim transition-colors hover:text-ink"
+            >
+              User Management
+            </button>
+          ))}
         <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 py-1 pl-1 pr-3">
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-medical text-[11px] font-semibold">
             {initials}

@@ -165,3 +165,30 @@ export const resolveIncident = (incidentId) =>
 
 export const markEnRoute = (incidentId) =>
   updateIncidentStatus(incidentId, "En Route");
+
+// ---- Admin user management (GET/POST/PATCH /api/users) -----------------
+// Behind verifyAuth + requireAdmin on the backend. A 403 here means
+// "not an admin" — a normal authorization error. The 401 → logout
+// interceptor above only reacts to 401, so a 403 never signs anyone out.
+
+// Returns the plain user list ({ success, data } unwrapped) so the
+// management table works directly with the mapped users.
+export const listUsers = async () => {
+  const response = await api.get("/api/users");
+  return response.data?.data ?? [];
+};
+
+export const createUser = async (payload) => {
+  const response = await api.post("/api/users", payload);
+  return response.data;
+};
+
+export const updateUser = async (uid, payload) => {
+  const response = await api.patch(`/api/users/${uid}`, payload);
+  return response.data;
+};
+
+export const setUserEnabled = async (uid, enabled) => {
+  const response = await api.patch(`/api/users/${uid}/status`, { enabled });
+  return response.data;
+};

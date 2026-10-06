@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Header from "./components/Header";
 import Login from "./components/Login";
 import ControlRoom from "./components/ControlRoom";
+import UserManagement from "./components/UserManagement";
 import TriageModal from "./components/TriageModal";
 import DispatchTracker from "./components/DispatchTracker";
 import NewIncidentToast from "./components/NewIncidentToast";
@@ -20,6 +21,10 @@ export default function App() {
   const { incidents, refresh, newIncidentIds } = useIncidentPolling();
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [newIncidentToast, setNewIncidentToast] = useState(null);
+  // Two simple views: the Control Room (default) and the admin-only
+  // User Management page. No router — same single-screen state-switch
+  // pattern as ControlRoom's queueView.
+  const [view, setView] = useState("control");
 
   // Session-wide record of already-announced IDs, so a batch can never
   // toast the same incident twice (even across filter switches or
@@ -94,6 +99,19 @@ export default function App() {
     logout();
   };
 
+  const handleNavigate = (nextView) => {
+    // Switching views shouldn't leave a triage/tracker modal hanging
+    // over the newly selected screen.
+    setSelectedIncident(null);
+    setView(nextView);
+  };
+
+  // Defense in depth: the Header only OFFERS the User Management
+  // control to admins, but the view itself also refuses to render
+  // for anyone but an admin (and the backend 403s every /api/users
+  // call regardless — that's the real boundary).
+  const showUsers = view === "users" && authState.user.role === "admin";
+
   // Once an incident reaches "Dispatched" it moves into the live-tracker
   // flow and stays there through "En Route" until "Resolved". Selecting a
   // modal by `status === "DISPATCHED"` exactly would bounce it back to the
@@ -107,16 +125,26 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col">
-      <Header dutyOfficer={authState.user.email} onLogout={handleLogout} />
+      <Header
+        dutyOfficer={authState.user.email}
+        role={authState.user.role}
+        view={view}
+        onNavigate={handleNavigate}
+        onLogout={handleLogout}
+      />
 
       <main className="flex-1 overflow-hidden">
-        <ControlRoom
-          incidents={incidents}
-          onSelectIncident={setSelectedIncident}
-          initialAgency={authState.user.agency}
-          newIncidentIds={newIncidentIds}
-          onVisibleNewIncidents={handleVisibleNewIncidents}
-        />
+        {showUsers ? (
+          <UserManagement />
+        ) : (
+          <ControlRoom
+            incidents={incidents}
+            onSelectIncident={setSelectedIncident}
+            initialAgency={authState.user.agency}
+            newIncidentIds={newIncidentIds}
+            onVisibleNewIncidents={handleVisibleNewIncidents}
+          />
+        )}
       </main>
 
       {newIncidentToast && (
