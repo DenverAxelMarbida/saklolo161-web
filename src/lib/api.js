@@ -192,3 +192,22 @@ export const setUserEnabled = async (uid, enabled) => {
   const response = await api.patch(`/api/users/${uid}/status`, { enabled });
   return response.data;
 };
+
+// ---- Self-service password change (POST /api/users/me/password) ----------
+// verifyAuth only on the backend — any authenticated dispatcher or
+// admin changes their OWN password; the uid comes from the token,
+// never this payload. A 400 (weak password, wrong current password,
+// mismatch) carries { message } and is surfaced by the modal; a 401
+// signs the user out via the interceptor above.
+export const changeOwnPassword = async ({
+  currentPassword,
+  newPassword,
+  confirmNewPassword,
+}) => {
+  const response = await api.post("/api/users/me/password", {
+    currentPassword,
+    newPassword,
+    confirmNewPassword,
+  });
+  return response.data;
+};
