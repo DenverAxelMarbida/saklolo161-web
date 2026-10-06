@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import App from "../src/App";
 import Header from "../src/components/Header";
@@ -6,7 +7,12 @@ import Settings from "../src/components/Settings";
 
 // ---- App-level mocks (hoisted above imports by vitest) --------------------
 
-const { authState } = vi.hoisted(() => ({ authState: { payload: null } }));
+const { authState, pollState } = vi.hoisted(() => ({
+  authState: { payload: null },
+  // Mutable so the view-switching test can give the Control Room some
+  // App-level polling state to carry across a Settings round-trip.
+  pollState: { incidents: [] },
+}));
 
 vi.mock("../src/lib/auth", () => ({
   onAuthChange: (callback) => {
@@ -20,17 +26,25 @@ vi.mock("../src/lib/auth", () => ({
 
 vi.mock("../src/hooks/useIncidentPolling", () => ({
   useIncidentPolling: () => ({
-    incidents: [],
+    incidents: pollState.incidents,
     refresh: vi.fn(),
     newIncidentIds: [],
   }),
 }));
 
 // ControlRoom (and its map/queue children) isn't what these tests cover —
-// its behavior belongs to its own component tests. A marker div is enough
-// to prove App's view-switching rendered the right screen.
+// its behavior belongs to its own component tests. A marker div that
+// echoes the incidents prop is enough to prove App's view-switching
+// rendered the right screen AND that App-level polling state survived a
+// Settings round-trip.
 vi.mock("../src/components/ControlRoom", () => ({
-  default: () => <div data-testid="control-room" />,
+  default: ({ incidents = [] }) => (
+    <div data-testid="control-room">
+      {incidents.map((incident) => (
+        <span key={incident.id}>{incident.refNo}</span>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock("../src/lib/api", () => ({
@@ -62,6 +76,7 @@ const adminUser = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  pollState.incidents = [];
   listUsers.mockResolvedValue([]);
   authState.payload = { token: "test-token", user: dispatcherUser };
 });
@@ -72,7 +87,6 @@ describe("Header — Settings gear button", () => {
     render(
       <Header
         dutyOfficer="fire@marikina.gov.ph"
-        role="dispatcher"
         view="control"
         onNavigate={onNavigate}
         onLogout={() => {}}
@@ -84,19 +98,45 @@ describe("Header — Settings gear button", () => {
 
     // Existing header functionality intact.
     expect(screen.getByText("Logout")).toBeTruthy();
-    expect(screen.getByText("Change Password")).toBeTruthy();
     expect(screen.getByText("SAKLOLO 161")).toBeTruthy();
+
+    // Redundant controls are gone from the header — Settings is the single
+    // entry point for both (asserted below, not duplicated here).
+    expect(screen.queryByText("Change Password")).toBeNull();
+    expect(screen.queryByText("User Management")).toBeNull();
 
     fireEvent.click(gear);
     expect(onNavigate).toHaveBeenCalledWith("settings");
   });
 
-  it("is visible for an admin alongside the existing admin controls", () => {
+  it("no longer ships the dead search input — branding, Settings, chip, and Logout stand alone", () => {
+    const { container } = render(
+      <Header
+        dutyOfficer="fire@marikina.gov.ph"
+        view="control"
+        onNavigate={() => {}}
+        onLogout={() => {}}
+      />,
+    );
+
+    // The non-functional search box is gone entirely (no replacement
+    // control took its place).
+    expect(container.querySelector('input[type="search"]')).toBeNull();
+    expect(screen.queryByPlaceholderText(/Search by ref/)).toBeNull();
+    expect(container.querySelector("input")).toBeNull();
+
+    // Everything else survives the removal.
+    expect(screen.getByText("SAKLOLO 161")).toBeTruthy();
+    expect(screen.getByLabelText("Settings")).toBeTruthy();
+    expect(screen.getByText("fire@marikina.gov.ph")).toBeTruthy();
+    expect(screen.getByText("Logout")).toBeTruthy();
+  });
+
+  it("is visible for an admin without reintroducing the old admin/password buttons", () => {
     const onNavigate = vi.fn();
     render(
       <Header
         dutyOfficer="admin@marikina.gov.ph"
-        role="admin"
         view="control"
         onNavigate={onNavigate}
         onLogout={() => {}}
@@ -105,7 +145,8 @@ describe("Header — Settings gear button", () => {
 
     fireEvent.click(screen.getByLabelText("Settings"));
     expect(onNavigate).toHaveBeenCalledWith("settings");
-    expect(screen.getByText("User Management")).toBeTruthy();
+    expect(screen.queryByText("User Management")).toBeNull();
+    expect(screen.queryByText("Change Password")).toBeNull();
     expect(screen.getByText("Logout")).toBeTruthy();
   });
 
@@ -113,7 +154,6 @@ describe("Header — Settings gear button", () => {
     const { rerender } = render(
       <Header
         dutyOfficer="fire@marikina.gov.ph"
-        role="dispatcher"
         view="control"
         onNavigate={() => {}}
         onLogout={() => {}}
@@ -126,7 +166,6 @@ describe("Header — Settings gear button", () => {
     rerender(
       <Header
         dutyOfficer="fire@marikina.gov.ph"
-        role="dispatcher"
         view="settings"
         onNavigate={() => {}}
         onLogout={() => {}}
@@ -229,6 +268,36 @@ describe("App — Settings view switching", () => {
     expect(screen.queryByRole("heading", { name: "Settings" })).toBeNull();
   });
 
+  it("Settings round-trip keeps App-level state intact and runs the view cross-fade", () => {
+    // Give the Control Room App-level polling state to carry.
+    pollState.incidents = [
+      { id: "inc-1", refNo: "INC-0001" },
+      { id: "inc-2", refNo: "INC-0002" },
+    ];
+    render(<App />);
+
+    // Control Room: shell carries the transition class, incidents visible.
+    let main = screen.getByRole("main");
+    expect(main.classList.contains("animate-view-in")).toBe(true);
+    expect(screen.getByText("INC-0001")).toBeTruthy();
+    expect(screen.getByText("INC-0002")).toBeTruthy();
+
+    // Control Room -> Settings.
+    fireEvent.click(screen.getByLabelText("Settings"));
+    main = screen.getByRole("main");
+    expect(within(main).getByRole("heading", { name: "Settings" })).toBeTruthy();
+    expect(main.classList.contains("animate-view-in")).toBe(true);
+    expect(screen.queryByText("INC-0001")).toBeNull();
+
+    // Settings -> Control Room: the same App-level state comes back —
+    // navigation must not reset the polling data behind the view.
+    fireEvent.click(within(main).getByText("Back to Control Room"));
+    expect(screen.getByTestId("control-room")).toBeTruthy();
+    expect(screen.getByText("INC-0001")).toBeTruthy();
+    expect(screen.getByText("INC-0002")).toBeTruthy();
+    expect(screen.getByRole("main").classList.contains("animate-view-in")).toBe(true);
+  });
+
   it("dispatcher: no User Management entry point anywhere in Settings", () => {
     render(<App />);
     fireEvent.click(screen.getByLabelText("Settings"));
@@ -281,5 +350,44 @@ describe("App — Settings view switching", () => {
     expect(screen.getByLabelText("Current Password")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Close"));
     expect(screen.queryByLabelText("Current Password")).toBeNull();
+  });
+});
+
+describe("View transition — CSS contract", () => {
+  // jsdom doesn't execute stylesheets, so the animation's properties are
+  // verified at the source: fast, opacity-only, reduced-motion aware.
+  // (import.meta.url isn't a file: URL under the jsdom environment, so
+  // resolve from the project root instead.)
+  const css = readFileSync("src/index.css", "utf8");
+
+  it("cross-fades views with a fast, opacity-only keyframe", () => {
+    const kfIndex = css.indexOf("@keyframes sak-view-in");
+    expect(kfIndex).toBeGreaterThan(-1);
+    const keyframes = css.slice(kfIndex, css.indexOf("\n}", kfIndex));
+    expect(keyframes).toContain("opacity: 0");
+    expect(keyframes).toContain("opacity: 1");
+    expect(keyframes).not.toContain("transform");
+
+    const classMatch = css.match(/\.animate-view-in\s*\{[^}]*\}/);
+    expect(classMatch).toBeTruthy();
+    expect(classMatch[0]).toMatch(/animation:\s*sak-view-in\s+0\.18s\s+ease-out/);
+  });
+
+  it("keeps modal/status entrance animations inside the 150–250ms band", () => {
+    const popIn = css.match(/\.animate-pop-in\s*\{[^}]*\}/);
+    expect(popIn).toBeTruthy();
+    expect(popIn[0]).toMatch(/animation:\s*sak-pop-in\s+0\.2s\s+ease-out/);
+
+    const slideUp = css.match(/\.animate-slide-up\s*\{[^}]*\}/);
+    expect(slideUp).toBeTruthy();
+    expect(slideUp[0]).toMatch(/animation:\s*sak-slide-up\s+0\.25s\s+ease-out/);
+  });
+
+  it("is disabled under prefers-reduced-motion", () => {
+    const rmIndex = css.indexOf("@media (prefers-reduced-motion: reduce)");
+    expect(rmIndex).toBeGreaterThan(-1);
+    const reducedMotion = css.slice(rmIndex, css.indexOf("\n}", rmIndex));
+    expect(reducedMotion).toContain(".animate-view-in");
+    expect(reducedMotion).toContain("animation: none");
   });
 });

@@ -27,7 +27,7 @@ export default function ControlRoom({
   );
   const [queueView, setQueueView] = useState("active");
   const [resolvedQuery, setResolvedQuery] = useState("");
-  const { weather, river, loading } = useWeatherRiver();
+  const { weather, river, updatedAt, loading, error, refetch } = useWeatherRiver();
 
   // Only surface a new incident to the toast when it would actually be
   // visible in this dispatcher's current view (category filter + not
@@ -51,8 +51,20 @@ export default function ControlRoom({
   return (
     <div className="grid h-full grid-cols-1 gap-3 overflow-y-auto p-3 xl:grid-cols-[280px_1fr_320px] xl:overflow-hidden">
       <aside className="space-y-3 overflow-y-auto">
-        <WeatherCard weather={weather} loading={loading} />
-        <RiverLevelCard river={river} loading={loading} />
+        <WeatherCard
+          weather={weather}
+          loading={loading}
+          error={error}
+          onRetry={refetch}
+          updatedAt={updatedAt}
+        />
+        <RiverLevelCard
+          river={river}
+          loading={loading}
+          error={error}
+          onRetry={refetch}
+          updatedAt={updatedAt}
+        />
         <CategoryTally
           incidents={incidents}
           activeFilter={activeFilter}
@@ -79,6 +91,7 @@ export default function ControlRoom({
             <button
               key={tab.key}
               onClick={() => setQueueView(tab.key)}
+              aria-pressed={queueView === tab.key}
               className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold transition-colors ${
                 queueView === tab.key
                   ? tab.key === "resolved"

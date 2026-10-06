@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import { CATEGORIES } from "../lib/config";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import MiniIncidentMap from "./MiniIncidentMap";
 import EvidenceGallery from "./EvidenceGallery";
 
@@ -15,6 +17,8 @@ function formatResolvedDate(isoString) {
 }
 
 export default function ResolvedDetailModal({ incident, onClose }) {
+  const rootRef = useRef(null);
+  useDialogDismiss(rootRef, onClose);
   const category = CATEGORIES[incident.category];
 
   // Real media renders inline when `url` is served; legacy records with an
@@ -23,7 +27,14 @@ export default function ResolvedDetailModal({ incident, onClose }) {
   const evidence = incident.evidence || [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Resolved incident #${incident.id}`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none"
+    >
       <div className="flex max-h-[90vh] w-full max-w-3xl animate-pop-in flex-col overflow-hidden rounded-lg border border-border bg-panel">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border p-4">
@@ -42,7 +53,12 @@ export default function ResolvedDetailModal({ incident, onClose }) {
               RESOLVED
             </span>
           </div>
-          <button onClick={onClose} className="text-ink-dim hover:text-ink" aria-label="Close">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-dim transition-colors hover:text-ink"
+          >
             ✕
           </button>
         </div>

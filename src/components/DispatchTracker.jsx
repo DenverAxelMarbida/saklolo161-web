@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { resolveIncident, markEnRoute, fetchRoute } from "../lib/api";
 import { straightLineEstimate } from "../lib/geo";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import RouteMap from "./RouteMap";
 
 const STEPS = ["Pending", "Dispatched", "En Route", "Resolved"];
 
 export default function DispatchTracker({ incident, onClose, onResolved, onStatusUpdated }) {
+  const rootRef = useRef(null);
+  useDialogDismiss(rootRef, onClose);
 
   // The stepper reflects the incident's REAL status field — never a
   // locally-guessed or hardcoded step index. Fall back to 0 if the
@@ -109,14 +112,26 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Live Dispatch Tracker"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none"
+    >
       <div className="flex max-h-[90vh] w-full max-w-3xl animate-pop-in flex-col overflow-hidden rounded-lg border border-border bg-panel">
         <div className="flex items-center justify-between border-b border-border p-4">
           <div className="flex items-center gap-2">
             <span className="font-semibold">Live Dispatch Tracker</span>
             <span className="font-mono text-sm text-ink-dim">#{incident.id}</span>
           </div>
-          <button onClick={onClose} className="text-ink-dim hover:text-ink" aria-label="Close">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-dim transition-colors hover:text-ink"
+          >
             ✕
           </button>
         </div>
@@ -187,8 +202,7 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
             <button
               onClick={handleMarkEnRoute}
               disabled={markingEnRoute}
-              className="w-full rounded-md py-3 text-sm font-semibold transition-opacity active:scale-[0.98] disabled:opacity-60"
-              style={{ backgroundColor: "#F59E0B", color: "#111A3A" }}
+              className="w-full rounded-md bg-risk-mid py-3 text-sm font-semibold text-header transition-opacity active:scale-[0.98] disabled:opacity-60"
             >
               {markingEnRoute ? "Marking En Route…" : "MARK EN ROUTE"}
             </button>

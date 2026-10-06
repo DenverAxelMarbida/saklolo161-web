@@ -57,6 +57,17 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  // Auth state is authoritative: the moment it goes null (logout, or a
+  // 401-driven sign-out) drop any view/modal/toast the previous operator
+  // left behind, so the next sign-in always lands on a clean Control Room
+  // instead of someone else's screen. No-op on the cold-start null.
+  useEffect(() => {
+    if (authState) return;
+    setView("control");
+    setSelectedIncident(null);
+    setNewIncidentToast(null);
+  }, [authState]);
+
   const handleDispatched = (updatedIncident) => {
     setSelectedIncident(updatedIncident);
     refresh(); // pull the authoritative state immediately rather than waiting up to 10s
@@ -95,9 +106,10 @@ export default function App() {
   }
 
   const handleLogout = () => {
-    // logout() clears localStorage and notifies the onAuthChange
-    // subscription, which sets authState back to null and re-renders
-    // Login. Nothing else needed here.
+    // Reached only after the Header's confirmation dialog is accepted —
+    // logout() clears the auth cache/snapshot and notifies the
+    // onAuthChange subscription, which sets authState back to null and
+    // re-renders Login. Nothing else needed here.
     logout();
   };
 
@@ -108,11 +120,11 @@ export default function App() {
     setView(nextView);
   };
 
-  // Defense in depth: the Header only OFFERS the User Management
-  // control to admins, but the view itself also refuses to render
-  // for anyone but an admin (and the backend 403s every /api/users
-  // call regardless — that's the real boundary). Settings is open
-  // to both roles; only its User Management card is admin-gated.
+  // Defense in depth: the Header offers no User Management entry at all —
+  // admins reach the view through Settings, and it also refuses to render
+  // for anyone but an admin (plus the backend 403s every /api/users call
+  // regardless — that's the real boundary). Settings is open to both
+  // roles; only its User Management card is admin-gated.
   const showUsers = view === "users" && authState.user.role === "admin";
   const showSettings = view === "settings";
 
@@ -128,16 +140,22 @@ export default function App() {
     );
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-screen animate-screen-in flex-col">
       <Header
         dutyOfficer={authState.user.email}
-        role={authState.user.role}
         view={view}
         onNavigate={handleNavigate}
         onLogout={handleLogout}
       />
 
-      <main className="flex-1 overflow-hidden">
+      {/* key={view} only remounts this stateless layout shell so the
+          cross-fade replays on every switch. The view children already
+          unmount/remount today (the conditional render below swaps element
+          types), so mount semantics are unchanged — and nothing keyed here
+          touches App-level state: polling incidents, the new-incident
+          toast, and the announced-ID ref all live above this <main>, while
+          handleNavigate still clears only selectedIncident (by design). */}
+      <main key={view} className="flex-1 animate-view-in overflow-hidden">
         {showSettings ? (
           <Settings user={authState.user} onNavigate={handleNavigate} />
         ) : showUsers ? (

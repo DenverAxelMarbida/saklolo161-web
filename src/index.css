@@ -203,14 +203,62 @@ a[href],
 .animate-step-pulse {
   animation: sak-step-pulse 1s ease-out 1;
 }
+/* Entrance animations stay inside the 150–250ms responsiveness band
+   (Doherty threshold) so modals/status changes never feel laggy. */
 .animate-pop-in {
-  animation: sak-pop-in 0.4s ease-out 1;
+  animation: sak-pop-in 0.2s ease-out 1;
 }
 .animate-slide-up {
-  animation: sak-slide-up 0.35s ease-out 1;
+  animation: sak-slide-up 0.25s ease-out 1;
 }
 .animate-button-flash {
   animation: sak-button-flash 0.6s ease-out 1;
+}
+
+/* Auth-screen hand-off (login <-> control room). Opacity only, never a
+   transform: the control room root holds position:fixed overlays (triage,
+   tracker, confirm dialogs) and a transformed ancestor would re-anchor them
+   mid-fade. It runs once on mount, so it can never delay or gate the auth
+   state itself — the swap stays synchronous with onAuthChange. */
+@keyframes sak-screen-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-screen-in {
+  animation: sak-screen-in 0.2s ease-out 1;
+}
+
+/* Cross-fade when the shell swaps top-level views (Control Room <->
+   Settings <-> User Management). Opacity only, no transform: these views
+   host fixed overlays (UserManagement's dialog, EvidenceGallery) and a
+   lingering transform on <main> would re-anchor them away from the
+   viewport. ~180ms reads as a cut with a soft edge, not an effect. */
+@keyframes sak-view-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-view-in {
+  animation: sak-view-in 0.18s ease-out 1;
+}
+
+/* Faint ops-grid backdrop for the login screen — a chart/coordinate texture
+   that reads as "control room" without competing with the form. */
+.sak-login-grid {
+  background-image:
+    linear-gradient(to right, rgba(231, 235, 245, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(231, 235, 245, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center center;
 }
 
 /* New-incident marker pulse — the ring takes the incident's category
@@ -219,16 +267,32 @@ a[href],
    Mapbox positions marker elements via their transform, so animating it
    would rip pins off their coordinates. 10 x 1s = exactly 10 seconds,
    matching the polling cycle; the class itself also drops off on the
-   next 10s poll once the ID is no longer new. */
+   next 10s poll once the ID is no longer new.
+
+   Three stacked shadow layers make the alert readable at a glance on a
+   busy map: a bright tight ring hugging the pin (the immediate "NEW"
+   beat), a much larger expanding outer ring, and a soft halo for
+   contrast against map tiles. Every layer starts strong at 0% and
+   reaches 0% alpha by 100%, so the ring expands outward and vanishes
+   completely each beat instead of lingering like a permanent glow. */
 @keyframes sak-marker-pulse {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--sak-pulse-color, #f4b400) 75%, transparent);
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--sak-pulse-color, #f4b400) 92%, transparent),
+      0 0 0 7px color-mix(in srgb, var(--sak-pulse-color, #f4b400) 65%, transparent),
+      0 0 16px 6px color-mix(in srgb, var(--sak-pulse-color, #f4b400) 55%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 10px color-mix(in srgb, var(--sak-pulse-color, #f4b400) 0%, transparent);
+    box-shadow:
+      0 0 0 12px color-mix(in srgb, var(--sak-pulse-color, #f4b400) 40%, transparent),
+      0 0 0 30px color-mix(in srgb, var(--sak-pulse-color, #f4b400) 28%, transparent),
+      0 0 30px 22px color-mix(in srgb, var(--sak-pulse-color, #f4b400) 20%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--sak-pulse-color, #f4b400) 0%, transparent);
+    box-shadow:
+      0 0 0 16px color-mix(in srgb, var(--sak-pulse-color, #f4b400) 0%, transparent),
+      0 0 0 38px color-mix(in srgb, var(--sak-pulse-color, #f4b400) 0%, transparent),
+      0 0 38px 30px color-mix(in srgb, var(--sak-pulse-color, #f4b400) 0%, transparent);
   }
 }
 
@@ -242,6 +306,8 @@ a[href],
   .animate-slide-up,
   .animate-button-flash,
   .animate-marker-pulse,
+  .animate-screen-in,
+  .animate-view-in,
   .animate-pulse {
     animation: none;
   }

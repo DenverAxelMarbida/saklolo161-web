@@ -226,28 +226,28 @@ describe("UserManagement", () => {
 });
 
 describe("Header admin navigation", () => {
-  it("2. shows the User Management control for an admin and navigates on click", () => {
+  it("2. no longer offers a direct User Management entry — Settings does", () => {
     const onNavigate = vi.fn();
     render(
       <Header
         dutyOfficer="admin@marikina.gov.ph"
-        role="admin"
         view="control"
         onNavigate={onNavigate}
         onLogout={() => {}}
       />,
     );
 
-    const nav = screen.getByText("User Management");
-    fireEvent.click(nav);
-    expect(onNavigate).toHaveBeenCalledWith("users");
+    // The header entry point was removed; Settings -> Open User Management
+    // is the way in (covered end-to-end in settings.test.jsx).
+    expect(screen.queryByText("User Management")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Settings"));
+    expect(onNavigate).toHaveBeenCalledWith("settings");
   });
 
   it("3. hides the User Management control from non-admins", () => {
     render(
       <Header
         dutyOfficer="fire@marikina.gov.ph"
-        role="dispatcher"
         view="control"
         onNavigate={() => {}}
         onLogout={() => {}}
@@ -260,21 +260,101 @@ describe("Header admin navigation", () => {
     expect(screen.getByText("fire@marikina.gov.ph")).toBeTruthy();
   });
 
-  it("shows the Control Room control (back) for an admin on the users view", () => {
+  it("keeps the header identical on the users view — Settings is the only way out", () => {
     const onNavigate = vi.fn();
     render(
       <Header
         dutyOfficer="admin@marikina.gov.ph"
-        role="admin"
         view="users"
         onNavigate={onNavigate}
         onLogout={() => {}}
       />,
     );
 
+    // No contextual nav buttons are reinstated while in the view.
     expect(screen.queryByText("User Management")).toBeNull();
-    const back = screen.getByText("Control Room");
-    fireEvent.click(back);
-    expect(onNavigate).toHaveBeenCalledWith("control");
+    expect(screen.queryByText("Control Room")).toBeNull();
+
+    // The exit path is Settings -> Back to Control Room (covered
+    // end-to-end in settings.test.jsx).
+    fireEvent.click(screen.getByLabelText("Settings"));
+    expect(onNavigate).toHaveBeenCalledWith("settings");
+  });
+});
+
+describe("UserManagement — password visibility toggles", () => {
+  it("both add-mode fields start hidden, toggle independently, and keep values", async () => {
+    listUsers.mockResolvedValue([]);
+
+    render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Add User"));
+
+    const password = screen.getByLabelText("Password");
+    const confirm = screen.getByLabelText("Confirm Password");
+    expect(password.type).toBe("password");
+    expect(confirm.type).toBe("password");
+    expect(screen.getAllByRole("button", { name: "Show password" })).toHaveLength(2);
+
+    fireEvent.change(password, { target: { value: STRONG } });
+    fireEvent.change(confirm, { target: { value: STRONG } });
+
+    // Reveal ONLY the first field — the confirm field stays hidden and
+    // neither value may change.
+    fireEvent.click(screen.getAllByRole("button", { name: "Show password" })[0]);
+    expect(password.type).toBe("text");
+    expect(confirm.type).toBe("password");
+    expect(password.value).toBe(STRONG);
+    expect(confirm.value).toBe(STRONG);
+    expect(screen.getAllByRole("button", { name: "Hide password" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Show password" })).toHaveLength(1);
+
+    // Hide it again — value still intact.
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(password.type).toBe("password");
+    expect(password.value).toBe(STRONG);
+    expect(confirm.value).toBe(STRONG);
+  });
+
+  it("keeps add-user validation intact while revealing the confirm field", async () => {
+    listUsers.mockResolvedValue([]);
+
+    render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Add User"));
+
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: STRONG },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm Password"), {
+      target: { value: "Mismatched!Pass1" },
+    });
+
+    expect(screen.getByText("Passwords do not match.")).toBeTruthy();
+    expect(screen.getByText("Create User").disabled).toBe(true);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Show password" })[1]);
+
+    const confirm = screen.getByLabelText("Confirm Password");
+    expect(confirm.type).toBe("text");
+    expect(confirm.value).toBe("Mismatched!Pass1");
+    expect(screen.getByText("Passwords do not match.")).toBeTruthy();
+    expect(screen.getByText("Create User").disabled).toBe(true);
+  });
+});
+
+describe("UserManagement — dialog dismissal", () => {
+  it("closes the Add User dialog on Escape and returns focus to its opener", async () => {
+    listUsers.mockResolvedValue([]);
+    render(<UserManagement />);
+
+    const opener = await screen.findByText("Add User");
+    opener.focus();
+    fireEvent.click(opener);
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.getAttribute("aria-label")).toBe("Add User");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(opener);
   });
 });

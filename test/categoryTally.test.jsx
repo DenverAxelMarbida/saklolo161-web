@@ -163,6 +163,17 @@ describe("CategoryTally — presentation", () => {
     const grid = container.querySelector("button").parentElement;
     expect(grid.className).toContain("grid-cols-2");
   });
+
+  it("marks the active category card with aria-pressed", () => {
+    renderTally({ agency: "ALL", activeFilter: "FLOOD" });
+
+    expect(
+      screen.getByRole("button", { name: /^FLOOD/ }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      screen.getByRole("button", { name: /^FIRE/ }).getAttribute("aria-pressed"),
+    ).toBe("false");
+  });
 });
 
 describe("ControlRoom wiring", () => {
@@ -205,5 +216,22 @@ describe("ControlRoom wiring", () => {
     expect(grid.className).toContain("grid-cols-1");
     expect(grid.className).toContain("xl:grid-cols-[280px_1fr_320px]");
     expect(grid.className).toContain("xl:overflow-hidden");
+  });
+
+  it("exposes the Active/Resolved view switch as aria-pressed toggle buttons", () => {
+    render(
+      <ControlRoom
+        incidents={[]}
+        onSelectIncident={() => {}}
+        initialAgency="ALL"
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Active" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      screen.getByRole("button", { name: "Resolved" }).getAttribute("aria-pressed"),
+    ).toBe("false");
   });
 });

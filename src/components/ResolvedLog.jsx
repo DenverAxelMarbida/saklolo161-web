@@ -8,7 +8,17 @@ export default function ResolvedLog({ incidents, query }) {
     () =>
       incidents
         .filter((i) => i.status === "RESOLVED")
-        .sort((a, b) => b.elapsedMinutes - a.elapsedMinutes),
+        // Most recently resolved first: the dispatcher's latest action
+        // lands at the top of the log (recency), instead of sinking to
+        // the bottom behind every older resolution. `elapsedMinutes`
+        // tracks time since REPORT, so it can't order resolutions —
+        // `resolvedAt` is the authoritative key (epoch fallback keeps
+        // pre-contract records in their incoming order).
+        .sort(
+          (a, b) =>
+            new Date(b.resolvedAt ?? 0).getTime() -
+            new Date(a.resolvedAt ?? 0).getTime(),
+        ),
     [incidents],
   );
 

@@ -64,7 +64,7 @@ export default function Settings({ user, onNavigate }) {
           <div className="mt-4">
             <button
               onClick={() => setShowChangePassword(true)}
-              className="rounded-md bg-medical px-3 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              className="rounded-md bg-medical px-3 py-2 text-sm font-semibold text-bg transition-opacity hover:opacity-90"
             >
               Change Password
             </button>

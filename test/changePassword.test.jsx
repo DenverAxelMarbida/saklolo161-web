@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Header from "../src/components/Header";
+import Settings from "../src/components/Settings";
 import ChangePasswordModal from "../src/components/ChangePasswordModal";
 import {
   PASSWORD_REQUIREMENTS,
@@ -15,6 +16,13 @@ vi.mock("../src/lib/api", () => ({
 import { changeOwnPassword } from "../src/lib/api";
 
 const STRONG = "Str0ngPass!xK9pQ2";
+
+const adminUser = {
+  uid: "uid-admin",
+  email: "admin@marikina.gov.ph",
+  agency: "ALL",
+  role: "admin",
+};
 
 function fillModal({
   current = "OldPass!xK9pQ2v3",
@@ -66,47 +74,40 @@ describe("password policy (web mirror)", () => {
 });
 
 describe("Header — Change Password access", () => {
-  it("shows Change Password to an admin (alongside User Management)", () => {
+  it("no longer offers Change Password or User Management to an admin", () => {
     render(
       <Header
         dutyOfficer="admin@marikina.gov.ph"
-        role="admin"
         view="control"
         onNavigate={() => {}}
         onLogout={() => {}}
       />,
     );
 
-    expect(screen.getByText("Change Password")).toBeTruthy();
-    expect(screen.getByText("User Management")).toBeTruthy();
+    expect(screen.queryByText("Change Password")).toBeNull();
+    expect(screen.queryByText("User Management")).toBeNull();
+    // Settings is now the single entry point for both.
+    expect(screen.getByLabelText("Settings")).toBeTruthy();
+    expect(screen.getByText("Logout")).toBeTruthy();
   });
 
-  it("shows Change Password to a dispatcher, with no User Management control", () => {
+  it("no longer offers Change Password to a dispatcher either", () => {
     render(
       <Header
         dutyOfficer="fire@marikina.gov.ph"
-        role="dispatcher"
         view="control"
         onNavigate={() => {}}
         onLogout={() => {}}
       />,
     );
 
-    expect(screen.getByText("Change Password")).toBeTruthy();
+    expect(screen.queryByText("Change Password")).toBeNull();
     expect(screen.queryByText("User Management")).toBeNull();
     expect(screen.getByText("Logout")).toBeTruthy();
   });
 
-  it("opens the modal with the three password fields and the checklist", () => {
-    render(
-      <Header
-        dutyOfficer="admin@marikina.gov.ph"
-        role="admin"
-        view="control"
-        onNavigate={() => {}}
-        onLogout={() => {}}
-      />,
-    );
+  it("still opens the existing modal with the three password fields and the checklist (from Settings)", () => {
+    render(<Settings user={adminUser} onNavigate={() => {}} />);
 
     fireEvent.click(screen.getByText("Change Password"));
 
@@ -266,5 +267,70 @@ describe("ChangePasswordModal", () => {
     fireEvent.click(screen.getByText("Cancel"));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(changeOwnPassword).not.toHaveBeenCalled();
+  });
+
+  it("closes on Escape without calling the API", () => {
+    const onClose = vi.fn();
+    render(<ChangePasswordModal onClose={onClose} />);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(changeOwnPassword).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChangePasswordModal — password visibility toggles", () => {
+  it("all three fields start hidden, toggle independently, and keep their values", () => {
+    render(<ChangePasswordModal onClose={() => {}} />);
+
+    const current = screen.getByLabelText("Current Password");
+    const next = screen.getByLabelText("New Password");
+    const confirm = screen.getByLabelText("Confirm New Password");
+    expect([current.type, next.type, confirm.type]).toEqual([
+      "password",
+      "password",
+      "password",
+    ]);
+    expect(screen.getAllByRole("button", { name: "Show password" })).toHaveLength(3);
+
+    fillModal();
+
+    // Reveal ONLY the current-password field — the other two must stay
+    // hidden, and no value may change.
+    fireEvent.click(screen.getAllByRole("button", { name: "Show password" })[0]);
+    expect(current.type).toBe("text");
+    expect(next.type).toBe("password");
+    expect(confirm.type).toBe("password");
+    expect(current.value).toBe("OldPass!xK9pQ2v3");
+    expect(next.value).toBe(STRONG);
+    expect(confirm.value).toBe(STRONG);
+    expect(screen.getAllByRole("button", { name: "Hide password" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Show password" })).toHaveLength(2);
+
+    // Hide it again — everything returns to the default state intact.
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect([current.type, next.type, confirm.type]).toEqual([
+      "password",
+      "password",
+      "password",
+    ]);
+    expect(current.value).toBe("OldPass!xK9pQ2v3");
+  });
+
+  it("keeps the mismatch validation visible while the confirm field is revealed", () => {
+    render(<ChangePasswordModal onClose={() => {}} />);
+
+    fillModal({ next: STRONG, confirm: "Mismatched!Pass1" });
+    expect(screen.getByText("Passwords do not match.")).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Show password" })[2]);
+
+    const confirm = screen.getByLabelText("Confirm New Password");
+    expect(confirm.type).toBe("text");
+    expect(confirm.value).toBe("Mismatched!Pass1");
+    expect(screen.getByText("Passwords do not match.")).toBeTruthy();
+    expect(screen.getByText("Update Password").closest("button").disabled).toBe(
+      true,
+    );
   });
 });

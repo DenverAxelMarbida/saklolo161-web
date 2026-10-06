@@ -48,6 +48,7 @@ export default function CategoryTally({
             <button
               key={key}
               onClick={() => onSelectFilter(isActive ? "ALL" : key)}
+              aria-pressed={isActive}
               className={`rounded-md border p-3 text-left transition-colors ${
                 isActive
                   ? "border-ink bg-panel-hover text-ink"

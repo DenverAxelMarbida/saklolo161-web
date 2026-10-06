@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import ResolvedDetailModal from "../src/components/ResolvedDetailModal";
 
 vi.mock("../src/components/MiniIncidentMap", () => ({
@@ -70,5 +70,18 @@ describe("ResolvedDetailModal evidence", () => {
     const previews = document.querySelectorAll("img[src], video[src]");
     expect(previews).toHaveLength(1);
     expect(previews[0].getAttribute("src")).toContain("b.png");
+  });
+});
+
+describe("ResolvedDetailModal — dialog dismissal", () => {
+  it("is a labelled dialog that closes on Escape", () => {
+    const onClose = vi.fn();
+    render(<ResolvedDetailModal incident={makeIncident()} onClose={onClose} />);
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

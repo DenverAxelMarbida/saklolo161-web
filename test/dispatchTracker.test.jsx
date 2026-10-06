@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import DispatchTracker from "../src/components/DispatchTracker";
 import { fetchRoute } from "../src/lib/api";
 
@@ -82,5 +82,35 @@ describe("DispatchTracker metric readout", () => {
 
     const dashes = await screen.findAllByText("—");
     expect(dashes.length).toBe(1);
+  });
+});
+
+describe("DispatchTracker — dialog dismissal", () => {
+  it("is a labelled dialog that closes on Escape", () => {
+    fetchRoute.mockResolvedValue({ geometry: null });
+    const onClose = vi.fn();
+    render(
+      <DispatchTracker
+        incident={makeIncident()}
+        onClose={onClose}
+        onResolved={() => {}}
+        onStatusUpdated={() => {}}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.getAttribute("aria-label")).toBe("Live Dispatch Tracker");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("styles MARK EN ROUTE with the risk-mid token, not a raw hex", () => {
+    fetchRoute.mockResolvedValue({ geometry: null });
+    renderTracker(makeIncident());
+
+    const button = screen.getByText("MARK EN ROUTE");
+    expect(button.className).toContain("bg-risk-mid");
+    expect(button.className).toContain("text-header");
   });
 });

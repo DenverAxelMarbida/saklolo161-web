@@ -127,3 +127,11 @@ describe("ActiveQueue — empty state", () => {
     expect(screen.getByText("No flood incidents in queue.")).toBeTruthy();
   });
 });
+describe("ActiveQueue — filter chips", () => {
+  it("marks the selected chip with aria-pressed", () => {
+    renderQueue([makeIncident()]);
+
+    expect(screen.getByRole("button", { name: "ALL" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "FLOOD" }).getAttribute("aria-pressed")).toBe("false");
+  });
+});
