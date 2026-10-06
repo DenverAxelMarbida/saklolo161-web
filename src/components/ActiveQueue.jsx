@@ -44,6 +44,7 @@ export default function ActiveQueue({
           <button
             key={filter}
             onClick={() => onFilterChange(filter)}
+            aria-pressed={activeFilter === filter}
             className={`rounded-full border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors ${
               activeFilter === filter
                 ? "border-transparent bg-ink text-bg"

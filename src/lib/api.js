@@ -72,7 +72,16 @@ export const getWeatherRiver = async () => {
     river: {
       levelM: d.riverLevelMeters,
       status: d.riverStatus, // as backend sends it ("Normal"), matching the mobile hero
+      // Already part of the payload (services/riverService.js) — surfaced
+      // so the card can show the published alert threshold and whether the
+      // reading is live PAGASA or the backend's degraded fallback. Purely
+      // additive: no new call, no client-side invention.
+      alertLevel: d.alertLevel,
+      source: d.source, // "pagasa" | "mock"
     },
+    // The backend's own response timestamp (kept across its 10-min cache),
+    // so the cards can show when this reading was taken.
+    updatedAt: d.timestamp,
   };
 };
 

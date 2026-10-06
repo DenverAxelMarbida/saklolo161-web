@@ -81,7 +81,7 @@ export default function NewIncidentToast({ toast, onClose }) {
           type="button"
           aria-label="Dismiss"
           onClick={() => onCloseRef.current()}
-          className="shrink-0 rounded border border-border px-1.5 text-xs text-ink-dim transition-colors hover:border-ink-dim hover:text-ink"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border text-xs text-ink-dim transition-colors hover:border-ink-dim hover:text-ink"
         >
           ✕
         </button>

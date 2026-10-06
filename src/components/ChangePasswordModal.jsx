@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { changeOwnPassword } from "../lib/api";
 import { isStrongPassword } from "../lib/passwordPolicy";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import PasswordRequirements from "./PasswordRequirements";
+import PasswordInput from "./PasswordInput";
 
 const errorMessage = (err, fallback) =>
   err?.response?.data?.message || fallback;
@@ -11,6 +13,8 @@ const errorMessage = (err, fallback) =>
 // comes from the token, never this payload). TriageModal-style
 // overlay with a live policy checklist.
 export default function ChangePasswordModal({ onClose }) {
+  const rootRef = useRef(null);
+  useDialogDismiss(rootRef, onClose);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
@@ -54,7 +58,9 @@ export default function ChangePasswordModal({ onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      ref={rootRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none"
       role="dialog"
       aria-modal="true"
       aria-label="Change Password"
@@ -64,7 +70,12 @@ export default function ChangePasswordModal({ onClose }) {
           <h2 className="text-sm font-semibold uppercase tracking-wide">
             Change Password
           </h2>
-          <button onClick={onClose} className="text-ink-dim hover:text-ink" aria-label="Close">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-dim transition-colors hover:text-ink"
+          >
             ✕
           </button>
         </div>
@@ -74,13 +85,12 @@ export default function ChangePasswordModal({ onClose }) {
             <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="pw-current">
               Current Password
             </label>
-            <input
+            <PasswordInput
               id="pw-current"
-              type="password"
               autoComplete="current-password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
-              className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+              className="mt-1 w-full rounded-md border border-border bg-bg pl-3 py-2 text-sm focus:border-medical focus:outline-none"
             />
           </div>
 
@@ -88,13 +98,12 @@ export default function ChangePasswordModal({ onClose }) {
             <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="pw-new">
               New Password
             </label>
-            <input
+            <PasswordInput
               id="pw-new"
-              type="password"
               autoComplete="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+              className="mt-1 w-full rounded-md border border-border bg-bg pl-3 py-2 text-sm focus:border-medical focus:outline-none"
             />
             <PasswordRequirements password={newPassword} />
           </div>
@@ -103,13 +112,12 @@ export default function ChangePasswordModal({ onClose }) {
             <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="pw-confirm">
               Confirm New Password
             </label>
-            <input
+            <PasswordInput
               id="pw-confirm"
-              type="password"
               autoComplete="new-password"
               value={confirmNewPassword}
               onChange={(e) => setConfirmNewPassword(e.target.value)}
-              className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+              className="mt-1 w-full rounded-md border border-border bg-bg pl-3 py-2 text-sm focus:border-medical focus:outline-none"
             />
             {mismatch && <p className="mt-1 text-xs text-fire">Passwords do not match.</p>}
             {!mismatch && sameAsCurrent && (
@@ -133,7 +141,7 @@ export default function ChangePasswordModal({ onClose }) {
           <button
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-60"
+            className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60"
           >
             {saving ? "Changing…" : "Update Password"}
           </button>

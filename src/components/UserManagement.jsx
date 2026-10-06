@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CATEGORY_KEYS } from "../lib/config";
 import {
   listUsers,
@@ -7,7 +7,9 @@ import {
   setUserEnabled,
 } from "../lib/api";
 import { isStrongPassword } from "../lib/passwordPolicy";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import PasswordRequirements from "./PasswordRequirements";
+import PasswordInput from "./PasswordInput";
 
 // Agencies come from the config source of truth (single source of
 // truth for categories), plus ALL for the cross-agency admin seat.
@@ -25,6 +27,8 @@ const errorMessage = (err, fallback) =>
 // mode enforces the shared password policy (live checklist) plus a
 // confirm field; the backend re-validates everything server-side.
 function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit }) {
+  const rootRef = useRef(null);
+  useDialogDismiss(rootRef, onCancel);
   const isAdd = mode === "add";
   const confirmMismatch =
     isAdd && form.confirmPassword.length > 0 && form.confirmPassword !== form.password;
@@ -36,13 +40,25 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
   const canSubmit = !saving && (!isAdd || addValid);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-label={isAdd ? "Add User" : "Edit User"}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none"
+    >
       <div className="w-full max-w-md animate-pop-in overflow-hidden rounded-lg border border-border bg-panel">
         <div className="flex items-center justify-between border-b border-border p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide">
             {isAdd ? "Add User" : "Edit User"}
           </h2>
-          <button onClick={onCancel} className="text-ink-dim hover:text-ink" aria-label="Close">
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-dim transition-colors hover:text-ink"
+          >
             ✕
           </button>
         </div>
@@ -66,26 +82,24 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
               <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="user-password">
                 Password
               </label>
-              <input
+              <PasswordInput
                 id="user-password"
-                type="password"
                 autoComplete="new-password"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+                className="mt-1 w-full rounded-md border border-border bg-bg pl-3 py-2 text-sm focus:border-medical focus:outline-none"
               />
               <PasswordRequirements password={form.password} />
 
               <label className="mt-3 block text-xs uppercase tracking-wide text-ink-dim" htmlFor="user-confirm">
                 Confirm Password
               </label>
-              <input
+              <PasswordInput
                 id="user-confirm"
-                type="password"
                 autoComplete="new-password"
                 value={form.confirmPassword}
                 onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
-                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+                className="mt-1 w-full rounded-md border border-border bg-bg pl-3 py-2 text-sm focus:border-medical focus:outline-none"
               />
               {confirmMismatch && (
                 <p className="mt-1 text-xs text-fire">Passwords do not match.</p>
@@ -142,7 +156,7 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
           <button
             onClick={onSubmit}
             disabled={!canSubmit}
-            className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-60"
+            className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60"
           >
             {saving ? "Saving…" : isAdd ? "Create User" : "Save Changes"}
           </button>
@@ -270,7 +284,7 @@ export default function UserManagement() {
           </div>
           <button
             onClick={openAdd}
-            className="rounded-md bg-medical px-3 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="rounded-md bg-medical px-3 py-2 text-sm font-semibold text-bg transition-opacity hover:opacity-90"
           >
             Add User
           </button>

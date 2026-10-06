@@ -1,10 +1,30 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CATEGORIES } from "../lib/config";
 import { dispatchIncident, normalizeIncident } from "../lib/api";
+import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import MiniIncidentMap from "./MiniIncidentMap";
 import EvidenceGallery from "./EvidenceGallery";
 
+// WCAG relative luminance for a "#rrggbb" hex (config category colors).
+const luminance = (hex) => {
+  const [r, g, b] = hex
+    .replace("#", "")
+    .match(/../g)
+    .map((chunk) => parseInt(chunk, 16) / 255)
+    .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+// Ink that stays WCAG-AA readable on a given category color: no single
+// text color passes 4.5:1 against all four category colors (the light
+// orange/blue/red need dark ink, the dark slate needs white), so the
+// dispatch button picks its ink per background.
+const inkClassFor = (bgHex) => (luminance(bgHex) > 0.179 ? "text-bg" : "text-white");
+
 export default function TriageModal({ incident, onClose, onDispatched }) {
+  const rootRef = useRef(null);
+  useDialogDismiss(rootRef, onClose);
+
   const category = CATEGORIES[incident.category];
   const [stationId, setStationId] = useState(category.stations[0].id);
   const [assignedUnit, setAssignedUnit] = useState(
@@ -58,7 +78,14 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Triage incident #${incident.id}`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none"
+    >
       <div className="flex max-h-[90vh] w-full max-w-3xl animate-pop-in flex-col overflow-hidden rounded-lg border border-border bg-panel">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border p-4">
@@ -76,7 +103,12 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
               </span>
             )}
           </div>
-          <button onClick={onClose} className="text-ink-dim hover:text-ink" aria-label="Close">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-dim transition-colors hover:text-ink"
+          >
             ✕
           </button>
         </div>
@@ -185,7 +217,7 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
           <button
             onClick={handleDispatch}
             disabled={submitting}
-            className="w-full rounded-md py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-60"
+            className={`w-full rounded-md py-3 text-sm font-semibold transition-opacity disabled:opacity-60 ${inkClassFor(category.color)}`}
             style={{ backgroundColor: category.color }}
           >
             {submitting ? "Dispatching…" : `DISPATCH ${station.name.toUpperCase()} UNIT ➔`}

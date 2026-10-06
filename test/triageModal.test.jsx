@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import TriageModal from "../src/components/TriageModal";
 
 vi.mock("../src/components/MiniIncidentMap", () => ({
@@ -190,5 +190,62 @@ describe("TriageModal", () => {
     const animated = container.querySelector(".animate-pop-in");
     expect(animated).toBeTruthy();
     expect(animated.className).toContain("max-w-3xl");
+  });
+
+  it("is a labelled dialog that takes focus on open, closes on Escape, and gives Close a full-size target", () => {
+    const onClose = vi.fn();
+    const { container } = render(
+      <TriageModal
+        incident={makeIncident()}
+        onClose={onClose}
+        onDispatched={() => {}}
+      />,
+    );
+
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(document.activeElement).toBe(dialog);
+
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(close.className).toContain("h-8");
+    expect(close.className).toContain("w-8");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("Escape closes the nested evidence lightbox first, then the dialog itself", () => {
+    const onClose = vi.fn();
+    const incident = makeIncident({
+      evidence: [
+        {
+          fileId: "ev-1",
+          url: "http://localhost:5000/api/incidents/x/evidence/ev-1/media",
+          mimeType: "image/jpeg",
+          sizeKb: 900,
+          uploadedAt: "2026-09-10T12:00:00.000Z",
+        },
+        {
+          fileId: "ev-2",
+          url: "http://localhost:5000/api/incidents/x/evidence/ev-2/media",
+          mimeType: "image/jpeg",
+          sizeKb: 900,
+          uploadedAt: "2026-09-10T12:00:01.000Z",
+        },
+      ],
+    });
+    render(
+      <TriageModal incident={incident} onClose={onClose} onDispatched={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /View evidence photo 1/ }));
+    expect(screen.getAllByRole("dialog")).toHaveLength(2);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
