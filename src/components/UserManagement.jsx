@@ -37,7 +37,7 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md overflow-hidden rounded-lg border border-border bg-panel">
+      <div className="w-full max-w-md animate-pop-in overflow-hidden rounded-lg border border-border bg-panel">
         <div className="flex items-center justify-between border-b border-border p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide">
             {isAdd ? "Add User" : "Edit User"}

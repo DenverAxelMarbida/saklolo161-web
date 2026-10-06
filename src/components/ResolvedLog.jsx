@@ -26,9 +26,9 @@ export default function ResolvedLog({ incidents, query }) {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto px-1 pb-2">
       {filtered.length === 0 && (
-        <p className="mt-6 text-center text-sm text-ink-dim">
+        <div className="mt-6 rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-ink-dim">
           No resolved incidents yet.
-        </p>
+        </div>
       )}
       {filtered.map((incident) => (
         <button

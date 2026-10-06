@@ -108,3 +108,22 @@ describe("ActiveQueue — new incident highlight", () => {
     expect(screen.getByText(/⏳ attaching evidence 1\/3/)).toBeTruthy();
   });
 });
+
+describe("ActiveQueue — empty state", () => {
+  it("renders the contained empty-state message when the queue is empty", () => {
+    renderQueue([]);
+    expect(screen.getByText("No incidents in queue.")).toBeTruthy();
+  });
+
+  it("keeps the empty-state message filter-aware", () => {
+    render(
+      <ActiveQueue
+        incidents={[]}
+        onSelectIncident={() => {}}
+        activeFilter="FLOOD"
+        onFilterChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("No flood incidents in queue.")).toBeTruthy();
+  });
+});

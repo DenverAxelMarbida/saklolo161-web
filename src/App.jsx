@@ -3,6 +3,7 @@ import Header from "./components/Header";
 import Login from "./components/Login";
 import ControlRoom from "./components/ControlRoom";
 import UserManagement from "./components/UserManagement";
+import Settings from "./components/Settings";
 import TriageModal from "./components/TriageModal";
 import DispatchTracker from "./components/DispatchTracker";
 import NewIncidentToast from "./components/NewIncidentToast";
@@ -21,9 +22,10 @@ export default function App() {
   const { incidents, refresh, newIncidentIds } = useIncidentPolling();
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [newIncidentToast, setNewIncidentToast] = useState(null);
-  // Two simple views: the Control Room (default) and the admin-only
-  // User Management page. No router — same single-screen state-switch
-  // pattern as ControlRoom's queueView.
+  // Three simple views: the Control Room (default), the admin-only
+  // User Management page, and the all-roles Settings page. No router
+  // — same single-screen state-switch pattern as ControlRoom's
+  // queueView.
   const [view, setView] = useState("control");
 
   // Session-wide record of already-announced IDs, so a batch can never
@@ -109,8 +111,10 @@ export default function App() {
   // Defense in depth: the Header only OFFERS the User Management
   // control to admins, but the view itself also refuses to render
   // for anyone but an admin (and the backend 403s every /api/users
-  // call regardless — that's the real boundary).
+  // call regardless — that's the real boundary). Settings is open
+  // to both roles; only its User Management card is admin-gated.
   const showUsers = view === "users" && authState.user.role === "admin";
+  const showSettings = view === "settings";
 
   // Once an incident reaches "Dispatched" it moves into the live-tracker
   // flow and stays there through "En Route" until "Resolved". Selecting a
@@ -134,7 +138,9 @@ export default function App() {
       />
 
       <main className="flex-1 overflow-hidden">
-        {showUsers ? (
+        {showSettings ? (
+          <Settings user={authState.user} onNavigate={handleNavigate} />
+        ) : showUsers ? (
           <UserManagement />
         ) : (
           <ControlRoom

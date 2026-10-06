@@ -49,7 +49,7 @@ export default function ControlRoom({
   }, [newIncidentIds, incidents, activeFilter, onVisibleNewIncidents]);
 
   return (
-    <div className="grid h-full grid-cols-[280px_1fr_320px] gap-3 p-3">
+    <div className="grid h-full grid-cols-1 gap-3 overflow-y-auto p-3 xl:grid-cols-[280px_1fr_320px] xl:overflow-hidden">
       <aside className="space-y-3 overflow-y-auto">
         <WeatherCard weather={weather} loading={loading} />
         <RiverLevelCard river={river} loading={loading} />
@@ -57,10 +57,11 @@ export default function ControlRoom({
           incidents={incidents}
           activeFilter={activeFilter}
           onSelectFilter={setActiveFilter}
+          agency={initialAgency}
         />
       </aside>
 
-      <section className="overflow-hidden rounded-md border border-border">
+      <section className="min-h-[420px] overflow-hidden rounded-md border border-border xl:min-h-0">
         <IncidentMap
           incidents={incidents}
           onSelectIncident={onSelectIncident}

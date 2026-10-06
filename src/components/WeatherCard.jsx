@@ -8,7 +8,7 @@ const RISK_COLORS = {
 
 export default function WeatherCard({ weather, loading }) {
   return (
-    <div className="rounded-md border border-border bg-panel p-4">
+    <div className="rounded-md border border-border bg-panel p-4" aria-busy={loading || !weather}>
       <div className="flex items-center justify-between">
         <span className="text-xs uppercase tracking-wide text-ink-dim">Weather</span>
         {!loading && weather && (
@@ -20,7 +20,7 @@ export default function WeatherCard({ weather, loading }) {
         )}
       </div>
       {loading || !weather ? (
-        <div className="mt-2 flex items-baseline gap-2">
+        <div className="mt-2 flex items-baseline gap-2 animate-pulse">
           <span className="font-mono text-3xl font-semibold text-ink-dim">—°C</span>
           <span className="text-sm text-ink-dim">Loading…</span>
         </div>

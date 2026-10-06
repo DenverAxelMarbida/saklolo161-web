@@ -33,7 +33,7 @@ export default function ActiveQueue({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between px-1">
-        <h2 className="font-semibold">Active Queue</h2>
+        <h2 className="text-sm font-semibold">Active Queue</h2>
         <span className="rounded-full border border-border bg-panel px-2 py-0.5 text-xs text-ink-dim">
           {pending.length} Pending
         </span>
@@ -57,9 +57,10 @@ export default function ActiveQueue({
 
       <div className="mt-3 flex-1 space-y-2 overflow-y-auto px-1 pb-2">
         {filtered.length === 0 && (
-          <p className="mt-6 text-center text-sm text-ink-dim">
-            No {activeFilter === "ALL" ? "" : activeFilter.toLowerCase()} incidents in queue.
-          </p>
+          <div className="mt-6 rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-ink-dim">
+            No {activeFilter === "ALL" ? "" : activeFilter.toLowerCase()}{" "}
+            incidents in queue.
+          </div>
         )}
         {filtered.map((incident) => {
           const isNew = newIncidentIds.includes(incident.id);

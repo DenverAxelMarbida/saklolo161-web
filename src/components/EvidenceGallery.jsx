@@ -141,7 +141,7 @@ export default function EvidenceGallery({ evidence }) {
           onClick={close}
         >
           <div
-            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col"
+            className="relative flex max-h-[90vh] w-full max-w-2xl animate-pop-in flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">

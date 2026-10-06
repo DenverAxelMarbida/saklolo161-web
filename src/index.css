@@ -46,6 +46,25 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Consistent keyboard-focus indicator on every interactive control
+   (WCAG 2.4.7). :focus-visible keeps it off mouse clicks; text inputs
+   that declare their own focus:outline-none + focus:border-* treatment
+   win on specificity and keep their existing border-color focus style. */
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+/* Tailwind v4 preflight drops button cursors back to `default`; every
+   button, select, and link in this control room opens, filters, or
+   navigates, so the pointer affordance shouldn't require hover to know. */
+button:not(:disabled),
+select,
+a[href],
+[role="button"] {
+  cursor: pointer;
+}
+
 /* Mapbox injects its own stylesheet for controls; this keeps our map
    containers from collapsing to 0 height, since Tailwind's preflight
    resets default element sizing. */
@@ -222,7 +241,8 @@ body {
   .animate-pop-in,
   .animate-slide-up,
   .animate-button-flash,
-  .animate-marker-pulse {
+  .animate-marker-pulse,
+  .animate-pulse {
     animation: none;
   }
 }

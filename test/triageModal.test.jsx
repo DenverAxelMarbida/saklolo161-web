@@ -177,4 +177,18 @@ describe("TriageModal", () => {
     expect(screen.getByText(/2 attachments failed to upload/)).toBeTruthy();
     expect(screen.queryByText(/Attaching evidence/)).toBeNull();
   });
+
+  it("dialog card uses the shared pop-in entrance animation", () => {
+    const { container } = render(
+      <TriageModal
+        incident={makeIncident()}
+        onClose={() => {}}
+        onDispatched={() => {}}
+      />,
+    );
+
+    const animated = container.querySelector(".animate-pop-in");
+    expect(animated).toBeTruthy();
+    expect(animated.className).toContain("max-w-3xl");
+  });
 });
