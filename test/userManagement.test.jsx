@@ -8,9 +8,12 @@ vi.mock("../src/lib/api", () => ({
   createUser: vi.fn(),
   updateUser: vi.fn(),
   setUserEnabled: vi.fn(),
+  changeOwnPassword: vi.fn(),
 }));
 
 import { listUsers, createUser, updateUser, setUserEnabled } from "../src/lib/api";
+
+const STRONG = "Str0ngPass!xK9pQ2";
 
 function makeUser(overrides = {}) {
   return {
@@ -64,7 +67,10 @@ describe("UserManagement", () => {
       target: { value: "new@marikina.gov.ph" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "secret123" },
+      target: { value: STRONG },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm Password"), {
+      target: { value: STRONG },
     });
     fireEvent.change(screen.getByLabelText("Agency"), {
       target: { value: "FLOOD" },
@@ -72,16 +78,61 @@ describe("UserManagement", () => {
     fireEvent.change(screen.getByLabelText("Role"), {
       target: { value: "dispatcher" },
     });
-    fireEvent.click(screen.getByText("Create User"));
+
+    const submit = screen.getByText("Create User");
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
 
     await waitFor(() =>
       expect(createUser).toHaveBeenCalledWith({
         email: "new@marikina.gov.ph",
-        password: "secret123",
+        password: STRONG,
         agency: "FLOOD",
         role: "dispatcher",
       }),
     );
+  });
+
+  it("keeps Create User disabled for a weak password and shows the live checklist", async () => {
+    listUsers.mockResolvedValue([]);
+
+    const { container } = render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Add User"));
+
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm Password"), {
+      target: { value: "secret123" },
+    });
+
+    expect(screen.getByText("Create User").disabled).toBe(true);
+    expect(container.querySelectorAll("li[data-met]").length).toBe(5);
+    expect(
+      container.querySelector('li[data-met="false"]'),
+    ).toBeTruthy();
+  });
+
+  it("keeps Create User disabled until Confirm Password matches", async () => {
+    listUsers.mockResolvedValue([]);
+
+    render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Add User"));
+
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: STRONG },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm Password"), {
+      target: { value: "Mismatched!Pass1" },
+    });
+
+    expect(screen.getByText("Create User").disabled).toBe(true);
+    expect(screen.getByText("Passwords do not match.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Confirm Password"), {
+      target: { value: STRONG },
+    });
+    expect(screen.getByText("Create User").disabled).toBe(false);
   });
 
   it("5. Edit opens the form pre-filled with the existing user data (no password field)", async () => {

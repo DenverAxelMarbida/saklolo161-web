@@ -6,6 +6,8 @@ import {
   updateUser,
   setUserEnabled,
 } from "../lib/api";
+import { isStrongPassword } from "../lib/passwordPolicy";
+import PasswordRequirements from "./PasswordRequirements";
 
 // Agencies come from the config source of truth (single source of
 // truth for categories), plus ALL for the cross-agency admin seat.
@@ -19,9 +21,19 @@ const errorMessage = (err, fallback) =>
   err?.response?.data?.message || fallback;
 
 // TriageModal-style overlay form for add/edit. Password exists for
-// ADD ONLY — editing an account never touches a password.
+// ADD ONLY — editing an account never touches a password. The add
+// mode enforces the shared password policy (live checklist) plus a
+// confirm field; the backend re-validates everything server-side.
 function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit }) {
   const isAdd = mode === "add";
+  const confirmMismatch =
+    isAdd && form.confirmPassword.length > 0 && form.confirmPassword !== form.password;
+  const addValid =
+    isAdd &&
+    form.password.length > 0 &&
+    isStrongPassword(form.password) &&
+    form.confirmPassword === form.password;
+  const canSubmit = !saving && (!isAdd || addValid);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -62,6 +74,22 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
               />
+              <PasswordRequirements password={form.password} />
+
+              <label className="mt-3 block text-xs uppercase tracking-wide text-ink-dim" htmlFor="user-confirm">
+                Confirm Password
+              </label>
+              <input
+                id="user-confirm"
+                type="password"
+                autoComplete="new-password"
+                value={form.confirmPassword}
+                onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+              />
+              {confirmMismatch && (
+                <p className="mt-1 text-xs text-fire">Passwords do not match.</p>
+              )}
             </div>
           )}
 
@@ -113,7 +141,7 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
           </button>
           <button
             onClick={onSubmit}
-            disabled={saving}
+            disabled={!canSubmit}
             className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-60"
           >
             {saving ? "Saving…" : isAdd ? "Create User" : "Save Changes"}
@@ -133,6 +161,7 @@ export default function UserManagement() {
   const [form, setForm] = useState({
     email: "",
     password: "",
+    confirmPassword: "",
     agency: AGENCIES[0],
     role: "dispatcher",
   });
@@ -159,14 +188,26 @@ export default function UserManagement() {
   }, [load]);
 
   const openAdd = () => {
-    setForm({ email: "", password: "", agency: AGENCIES[0], role: "dispatcher" });
+    setForm({
+      email: "",
+      password: "",
+      confirmPassword: "",
+      agency: AGENCIES[0],
+      role: "dispatcher",
+    });
     setModalError(null);
     setModal({ mode: "add" });
   };
 
   const openEdit = (user) => {
     // No password on edit — accounts never expose or reset one here.
-    setForm({ email: user.email, password: "", agency: user.agency, role: user.role });
+    setForm({
+      email: user.email,
+      password: "",
+      confirmPassword: "",
+      agency: user.agency,
+      role: user.role,
+    });
     setModalError(null);
     setModal({ mode: "edit", user });
   };

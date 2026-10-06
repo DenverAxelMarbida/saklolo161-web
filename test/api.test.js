@@ -8,6 +8,7 @@ import {
   createUser,
   updateUser,
   setUserEnabled,
+  changeOwnPassword,
 } from "../src/lib/api";
 import { resolveMediaUrl } from "../src/lib/api";
 
@@ -411,5 +412,21 @@ describe("user management endpoints", () => {
 
     await setUserEnabled("u1", true);
     expect(mockPatch).toHaveBeenLastCalledWith("/api/users/u1/status", { enabled: true });
+  });
+
+  it("changeOwnPassword POSTs /api/users/me/password with the three fields", async () => {
+    mockPost.mockResolvedValue({
+      data: { success: true, message: "Password changed successfully." },
+    });
+
+    const payload = {
+      currentPassword: "OldPass!xK9pQ2v3",
+      newPassword: "N3wSecure!Passw0rd!",
+      confirmNewPassword: "N3wSecure!Passw0rd!",
+    };
+    const result = await changeOwnPassword(payload);
+
+    expect(mockPost).toHaveBeenCalledWith("/api/users/me/password", payload);
+    expect(result.success).toBe(true);
   });
 });

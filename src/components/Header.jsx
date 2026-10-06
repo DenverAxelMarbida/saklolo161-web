@@ -1,4 +1,11 @@
+import { useState } from "react";
+import ChangePasswordModal from "./ChangePasswordModal";
+
 export default function Header({ dutyOfficer, role, view, onNavigate, onLogout }) {
+  // Modal state lives here so every signed-in role (dispatcher AND
+  // admin) gets the self-service Change Password control in one place.
+  const [showChangePassword, setShowChangePassword] = useState(false);
+
   // Duty officer is required — the signed-in dispatcher's email (mock
   // users have no display names, so email is the readable identifier).
   const displayName = dutyOfficer || "Dispatcher";
@@ -13,6 +20,7 @@ export default function Header({ dutyOfficer, role, view, onNavigate, onLogout }
   const isAdmin = role === "admin";
 
   return (
+    <>
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-header px-4">
       <div className="flex items-center gap-2">
         <span className="font-semibold tracking-tight">Marikina City MDRRMO</span>
@@ -45,6 +53,12 @@ export default function Header({ dutyOfficer, role, view, onNavigate, onLogout }
               User Management
             </button>
           ))}
+        <button
+          onClick={() => setShowChangePassword(true)}
+          className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-ink-dim transition-colors hover:text-ink"
+        >
+          Change Password
+        </button>
         <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 py-1 pl-1 pr-3">
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-medical text-[11px] font-semibold">
             {initials}
@@ -59,6 +73,12 @@ export default function Header({ dutyOfficer, role, view, onNavigate, onLogout }
           Logout
         </button>
       </div>
+
     </header>
+
+    {showChangePassword && (
+      <ChangePasswordModal onClose={() => setShowChangePassword(false)} />
+    )}
+    </>
   );
 }
