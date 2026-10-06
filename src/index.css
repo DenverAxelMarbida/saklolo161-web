@@ -194,26 +194,27 @@ body {
   animation: sak-button-flash 0.6s ease-out 1;
 }
 
-/* New-incident marker pulse — amber ring (never mint green, which is
-   reserved for the resolved state). Animates box-shadow only, never
-   transform: Mapbox positions marker elements via their transform, so
-   animating it would rip pins off their coordinates. 5 x 0.9s = 4.5s,
-   matching the new-incident toast's lifetime; the class itself also
-   drops off on the next 10s poll once the ID is no longer new. */
+/* New-incident marker pulse — the ring takes the incident's category
+   color via the per-marker --sak-pulse-color custom property (never the
+   resolved/mint green). Animates box-shadow only, never transform:
+   Mapbox positions marker elements via their transform, so animating it
+   would rip pins off their coordinates. 10 x 1s = exactly 10 seconds,
+   matching the polling cycle; the class itself also drops off on the
+   next 10s poll once the ID is no longer new. */
 @keyframes sak-marker-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(244, 180, 0, 0.75);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--sak-pulse-color, #f4b400) 75%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 10px rgba(244, 180, 0, 0);
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--sak-pulse-color, #f4b400) 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(244, 180, 0, 0);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--sak-pulse-color, #f4b400) 0%, transparent);
   }
 }
 
 .animate-marker-pulse {
-  animation: sak-marker-pulse 0.9s ease-out 5;
+  animation: sak-marker-pulse 1s ease-out 10;
 }
 
 @media (prefers-reduced-motion: reduce) {
