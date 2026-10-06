@@ -3,6 +3,7 @@ import { render, fireEvent } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import IncidentMap from "../src/components/IncidentMap";
+import { CATEGORIES } from "../src/lib/config";
 
 const { state } = vi.hoisted(() => ({
   state: {
@@ -82,8 +83,28 @@ const INCIDENT_C = {
   elapsedMinutes: 1,
   coords: { lat: 14.67, lng: 121.12 },
 };
+const INCIDENT_D = {
+  id: "INC-D",
+  category: "CRIME",
+  status: "PENDING",
+  priority: "HIGH",
+  location: "Barangka",
+  elapsedMinutes: 3,
+  coords: { lat: 14.68, lng: 121.13 },
+};
+const INCIDENT_UNKNOWN = {
+  id: "INC-X",
+  category: "ALIEN",
+  status: "PENDING",
+  priority: "LOW",
+  location: "Unknown barangay",
+  elapsedMinutes: 1,
+  coords: { lat: 14.69, lng: 121.14 },
+};
 
 const PULSE_CLASS = "animate-marker-pulse";
+const PULSE_COLOR_VAR = "--sak-pulse-color";
+const DEFAULT_PULSE_COLOR = "#334155";
 
 function liveMarkerEls() {
   return state.markers.filter((m) => !m.removed).map((m) => m.el);
@@ -212,5 +233,70 @@ describe("IncidentMap — new-incident marker pulse", () => {
     expect(block).toBeTruthy();
     expect(block).toContain(".animate-marker-pulse");
     expect(block).toContain("animation: none");
+  });
+
+  it("tints each pulsing marker with its incident category's existing color", () => {
+    renderMap({
+      incidents: [INCIDENT_A, INCIDENT_B, INCIDENT_C, INCIDENT_D],
+      newIncidentIds: ["INC-A", "INC-B", "INC-C", "INC-D"],
+    });
+
+    expect(markerElFor("INC-A").style.getPropertyValue(PULSE_COLOR_VAR)).toBe(
+      CATEGORIES.FLOOD.color,
+    );
+    expect(markerElFor("INC-B").style.getPropertyValue(PULSE_COLOR_VAR)).toBe(
+      CATEGORIES.FIRE.color,
+    );
+    expect(markerElFor("INC-C").style.getPropertyValue(PULSE_COLOR_VAR)).toBe(
+      CATEGORIES.MEDICAL.color,
+    );
+    expect(markerElFor("INC-D").style.getPropertyValue(PULSE_COLOR_VAR)).toBe(
+      CATEGORIES.CRIME.color,
+    );
+  });
+
+  it("falls back to the existing default color when the category is unrecognized", () => {
+    renderMap({
+      incidents: [INCIDENT_UNKNOWN],
+      newIncidentIds: ["INC-X"],
+    });
+
+    expect(markerElFor("INC-X").style.getPropertyValue(PULSE_COLOR_VAR)).toBe(
+      DEFAULT_PULSE_COLOR,
+    );
+  });
+
+  it("does not set a pulse color on markers that are not pulsing", () => {
+    renderMap({ newIncidentIds: ["INC-B"] });
+
+    expect(markerElFor("INC-B").style.getPropertyValue(PULSE_COLOR_VAR)).toBeTruthy();
+    expect(markerElFor("INC-A").style.getPropertyValue(PULSE_COLOR_VAR)).toBe("");
+    expect(markerElFor("INC-C").style.getPropertyValue(PULSE_COLOR_VAR)).toBe("");
+  });
+
+  it("runs the pulse animation for exactly 10 seconds", () => {
+    const css = readFileSync(
+      path.resolve(process.cwd(), "src", "index.css"),
+      "utf8",
+    );
+    const rule = css.match(/\.animate-marker-pulse \{[^}]+\}/)?.[0];
+    const match = rule?.match(
+      /animation: sak-marker-pulse (\d+(?:\.\d+)?)s ease-out (\d+)/,
+    );
+
+    expect(match).toBeTruthy();
+    expect(Number(match[1]) * Number(match[2])).toBe(10);
+  });
+
+  it("draws the ring color from the marker's custom property in the keyframes", () => {
+    const css = readFileSync(
+      path.resolve(process.cwd(), "src", "index.css"),
+      "utf8",
+    );
+    const keyframes = css.match(/@keyframes sak-marker-pulse \{[\s\S]*?\n\}/)?.[0];
+
+    expect(keyframes).toBeTruthy();
+    expect(keyframes).toContain(`var(${PULSE_COLOR_VAR}`);
+    expect(keyframes).not.toContain("#10b981");
   });
 });

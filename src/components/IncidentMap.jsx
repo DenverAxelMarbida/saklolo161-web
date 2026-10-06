@@ -66,8 +66,14 @@ export default function IncidentMap({ incidents, onSelectIncident, activeFilter,
         // Flags only the marker of an incident the 10s poll just flagged
         // as new; older markers are rendered exactly as before. The class
         // disappears on the next poll (newIncidentIds is replaced every
-        // fetch), so nothing pulses forever.
+        // fetch), so nothing pulses forever. The ring color is carried in
+        // a custom property so the keyframes can tint per category while
+        // reusing the exact CATEGORIES hex (same fallback as the pin fill).
         if (newIncidentIds.includes(incident.id)) {
+          el.style.setProperty(
+            "--sak-pulse-color",
+            CATEGORIES[incident.category]?.color || "#334155",
+          );
           el.classList.add("animate-marker-pulse");
         }
 
