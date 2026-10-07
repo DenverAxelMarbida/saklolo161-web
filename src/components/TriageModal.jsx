@@ -21,6 +21,18 @@ const luminance = (hex) => {
 // dispatch button picks its ink per background.
 const inkClassFor = (bgHex) => (luminance(bgHex) > 0.179 ? "text-bg" : "text-white");
 
+// Category-chip text sits on only a 20% tint of the category color over
+// the dark panel, where the raw category ink fails WCAG AA badly (crime
+// slate ≈1.5:1, fire/flood ≈3.6:1 vs the 4.5:1 requirement). Same
+// luminance() check as inkClassFor: the chip keeps as much of the
+// category hue in its TEXT as that hue's luminance allows — dark colors
+// are lightened toward white until the text clears AA on the tint
+// (borders/backgrounds keep the raw color and stay untouched).
+export const chipInkStyle = (hex) => {
+  const mixPct = Math.round(Math.min(100, Math.max(35, luminance(hex) * 120)));
+  return { color: `color-mix(in srgb, ${hex} ${mixPct}%, white)` };
+};
+
 export default function TriageModal({ incident, onClose, onDispatched }) {
   const rootRef = useRef(null);
   useDialogDismiss(rootRef, onClose);
@@ -84,15 +96,18 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
       role="dialog"
       aria-modal="true"
       aria-label={`Triage incident #${incident.id}`}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none animate-fade-in"
     >
-      <div className="flex max-h-[90vh] w-full max-w-3xl animate-pop-in flex-col overflow-hidden rounded-lg border border-border bg-panel">
+      <div className="flex max-h-[90vh] w-full max-w-3xl animate-pop-in flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-modal">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border p-4">
           <div className="flex items-center gap-2">
             <span
               className="rounded px-2 py-1 text-xs font-semibold uppercase"
-              style={{ backgroundColor: `color-mix(in srgb, ${category.color} 20%, transparent)`, color: category.color }}
+              style={{
+                backgroundColor: `color-mix(in srgb, ${category.color} 20%, transparent)`,
+                ...chipInkStyle(category.color),
+              }}
             >
               {category.label} EMERGENCY
             </span>
@@ -120,6 +135,11 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
           </div>
 
           <div className="space-y-4">
+            <div>
+              <h3 className="text-xs uppercase tracking-wide text-ink-dim">Phone Number</h3>
+              <p className="mt-1 text-sm font-semibold">{incident.citizenPhone || "—"}</p>
+            </div>
+
             <div>
               <h3 className="text-xs uppercase tracking-wide text-ink-dim">Caller Notes</h3>
               <p className="mt-1 text-sm">{incident.callerNotes}</p>
@@ -231,7 +251,7 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
           <button
             onClick={handleDispatch}
             disabled={submitting}
-            className={`w-full rounded-md py-3 text-sm font-semibold transition-opacity disabled:opacity-60 ${inkClassFor(category.color)}`}
+            className={`w-full rounded-md py-3 text-sm font-semibold transition-[opacity,transform] duration-150 active:scale-[0.985] disabled:opacity-60 ${inkClassFor(category.color)}`}
             style={{ backgroundColor: category.color }}
           >
             {submitting ? "Dispatching…" : `DISPATCH ${station.name.toUpperCase()} UNIT ➔`}

@@ -151,3 +151,29 @@ describe("ActiveQueue — filter chips", () => {
     expect(screen.getByRole("button", { name: "FLOOD" }).getAttribute("aria-pressed")).toBe("false");
   });
 });
+
+describe("ActiveQueue — long values", () => {
+  it("renders a long location in full with no clipping or nowrap classes", () => {
+    const LONG_LOCATION =
+      "780 Quezon Boulevard Barangay 391, Manila, Philippines";
+    renderQueue([makeIncident({ location: LONG_LOCATION })]);
+
+    const location = screen.getByText(LONG_LOCATION);
+    expect(location.className).not.toMatch(
+      /truncate|whitespace-nowrap|line-clamp/,
+    );
+  });
+
+  it("keeps category and status rendering unchanged alongside long values", () => {
+    renderQueue([
+      makeIncident({
+        location: "780 Quezon Boulevard Barangay 391, Manila, Philippines",
+        category: "CRIME",
+        status: "DISPATCHED",
+      }),
+    ]);
+
+    expect(screen.getByText("CRIME")).toBeTruthy();
+    expect(screen.getByText("DISPATCHED")).toBeTruthy();
+  });
+});

@@ -113,6 +113,12 @@ export const normalizeIncident = (i) => ({
       ? Math.max(0, Math.floor((Date.now() - new Date(i.timestamp).getTime()) / 60000))
       : 0,
   callerNotes: i.notes ?? i.callerNotes ?? "",
+  // Citizen contact, stored and returned by the backend as `citizenPhone`
+  // on every incident response (POST, GET list, GET :id). This map is the
+  // only gateway into the UI's incident shape, so omitting it here was
+  // silently stripping the number from every web view. `""` (not
+  // undefined) keeps legacy/mock records renderable with a graceful "—".
+  citizenPhone: i.citizenPhone ?? "",
   evidence: (i.evidence ?? []).map((e) => ({ ...e, url: resolveMediaUrl(e.url) })),
   evidenceUploading: i.evidenceUploading ?? false,
   evidenceExpectedCount: i.evidenceExpectedCount ?? 0,
@@ -122,6 +128,9 @@ export const normalizeIncident = (i) => ({
   station: i.station ?? null,
   dispatch: i.dispatch || null,
   resolvedAt: i.resolvedAt ?? null,
+  // Forward-compat passthrough: the backend does not write this yet,
+  // but a server-provided resolver identity must never be dropped.
+  resolvedBy: i.resolvedBy ?? null,
 });
 
 export const getIncidents = async () => {

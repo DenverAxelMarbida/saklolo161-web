@@ -23,13 +23,19 @@ const RISK_FALLBACK_TILE = "border-border bg-white/5 text-ink-dim";
 // (OpenWeather main values like "Thunderstorm", plus the backend's
 // "Partly Cloudy" fallback). Inline SVG — no emoji, no icon font, and
 // nothing that costs a network request on the sign-in-critical path.
+// Mobile (HomeDashboard.js) maps the same condition strings to the
+// same semantic keys — keep the two in sync.
 function conditionKey(condition = "") {
   const c = String(condition).toLowerCase();
   if (/thunder|storm|tornado|squall/.test(c)) return "storm";
-  if (/rain|drizzle|shower/.test(c)) return "rain";
+  if (/drizzle/.test(c)) return "drizzle";
+  if (/rain|shower/.test(c)) return "rain";
   if (/snow|sleet|hail/.test(c)) return "snow";
   if (/fog|mist|haze|smoke|smog|dust|sand|ash/.test(c)) return "fog";
   if (/clear|sun/.test(c)) return "clear";
+  if (/partly/.test(c)) return "partly";
+  if (/cloud|overcast/.test(c)) return "cloud";
+  // Unknown/unexpected text always degrades to the neutral cloud.
   return "cloud";
 }
 
@@ -41,10 +47,23 @@ const CONDITION_ART = {
     </>
   ),
   cloud: <path d="M17.5 19a4.5 4.5 0 0 0 .4-8.98A6 6 0 0 0 6.2 11.2 3.9 3.9 0 0 0 7 19z" />,
+  partly: (
+    <>
+      <circle cx="7.5" cy="6.5" r="2.5" />
+      <path d="M7.5 2v1.4M7.5 9.6V11M3 6.5H1.6M13.4 6.5H12M4.3 3.3l1 1M10.7 8.6l1 1M4.3 9.7l1-1M10.7 4.4l1-1" />
+      <path d="M18.5 19.5a3.6 3.6 0 0 0 .3-7.17A5.1 5.1 0 0 0 9.2 13.2a3.4 3.4 0 0 0 .7 6.3z" />
+    </>
+  ),
   rain: (
     <>
       <path d="M17 15a4 4 0 0 0 .4-7.96A5.5 5.5 0 0 0 6.5 11.2 3.5 3.5 0 0 0 7 15" />
       <path d="M8 17.5 7 20M12 17.5 11 20M16 17.5 15 20" />
+    </>
+  ),
+  drizzle: (
+    <>
+      <path d="M17 15a4 4 0 0 0 .4-7.96A5.5 5.5 0 0 0 6.5 11.2 3.5 3.5 0 0 0 7 15" />
+      <path d="M8.5 17.5v1.5M12.5 17.5v1.5M16.5 17.5v1.5" />
     </>
   ),
   storm: (
@@ -100,13 +119,17 @@ export default function WeatherCard({ weather, loading, error, onRetry, updatedA
 
       {hasData ? (
         <>
-          <div className="mt-3 flex items-center gap-3">
+          {/* Compact row: the small graphic supports the temperature
+              instead of competing with it — weather is informational,
+              not the dashboard's focal point. */}
+          <div className="mt-3 flex items-center gap-2.5">
             <span
               aria-hidden="true"
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border ${tile}`}
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${tile}`}
             >
               <svg
                 aria-hidden="true"
+                data-condition={conditionKey(weather.condition)}
                 className="h-5 w-5"
                 viewBox="0 0 24 24"
                 fill="none"
@@ -119,10 +142,10 @@ export default function WeatherCard({ weather, loading, error, onRetry, updatedA
               </svg>
             </span>
             <div className="min-w-0">
-              <div className="font-mono text-3xl font-semibold leading-none">
+              <div className="font-mono text-2xl font-semibold leading-none">
                 {weather.tempC}°C
               </div>
-              <div className="mt-1 truncate text-sm text-ink-dim">{weather.condition}</div>
+              <div className="mt-0.5 truncate text-[13px] text-ink-dim">{weather.condition}</div>
             </div>
           </div>
 
