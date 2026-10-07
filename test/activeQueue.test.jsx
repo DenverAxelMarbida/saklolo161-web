@@ -15,6 +15,8 @@ function makeIncident(overrides = {}) {
     evidenceUploading: false,
     evidenceExpectedCount: 0,
     evidenceFailedCount: 0,
+    evidenceAttempt: 0,
+    evidenceAttemptsTotal: 0,
     station: null,
     dispatch: null,
     resolvedAt: null,
@@ -54,6 +56,20 @@ describe("ActiveQueue", () => {
     expect(screen.getByText(/⏳ attaching evidence 1\/3/)).toBeTruthy();
   });
 
+  it("shows an honest retry chip when an automatic attempt is in flight", () => {
+    renderQueue([
+      makeIncident({
+        evidence: [{ fileId: "ev-1", url: "" }],
+        evidenceUploading: true,
+        evidenceExpectedCount: 3,
+        evidenceAttempt: 2,
+        evidenceAttemptsTotal: 3,
+      }),
+    ]);
+
+    expect(screen.getByTestId("queue-evidence-chip").textContent).toBe("↻ retrying 2/3");
+    expect(screen.queryByText(/%/)).toBeNull();
+  });
   it("flags a report with failed attachments once the loop finishes", () => {
     renderQueue([
       makeIncident({

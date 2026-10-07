@@ -139,9 +139,13 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
                     <div className="mt-2 rounded border border-risk-mid/40 bg-risk-mid/10 p-2.5">
                       <p className="flex items-center gap-1.5 text-xs font-semibold text-risk-mid">
                         <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-risk-mid" />
-                        Attaching evidence {incident.evidence.length}/
-                        {incident.evidenceExpectedCount}…
+                        {incident.evidenceAttempt >= 2 &&
+                        incident.evidenceAttemptsTotal > 0
+                          ? `Evidence retrying — attempt ${incident.evidenceAttempt}/${incident.evidenceAttemptsTotal}`
+                          : `Attaching evidence ${incident.evidence.length}/${incident.evidenceExpectedCount}…`}
                       </p>
+                      {/* Honest file-count progress only — never a fabricated byte %:
+                          this client has no per-byte telemetry from the citizen's phone. */}
                       <div className="mt-2 h-1 w-full overflow-hidden rounded bg-risk-mid/25">
                         <div
                           className="h-full bg-risk-mid transition-all"
@@ -164,6 +168,16 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
                       report still came through.
                     </p>
                   )}
+
+                  {!incident.evidenceUploading &&
+                    incident.evidenceFailedCount === 0 &&
+                    incident.evidenceExpectedCount > 0 &&
+                    incident.evidence.length >= incident.evidenceExpectedCount && (
+                      <p className="mt-2 text-xs font-medium text-resolved" data-testid="evidence-done">
+                        ✓ {incident.evidence.length} attachment
+                        {incident.evidence.length === 1 ? "" : "s"} uploaded
+                      </p>
+                    )}
                 </div>
               </div>
             )}

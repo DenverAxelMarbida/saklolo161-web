@@ -51,6 +51,24 @@ describe("ResolvedDetailModal evidence", () => {
     expect(video.getAttribute("src")).toContain("b.mp4");
   });
 
+  it("shows the server-recorded last upload time from uploadedAt", () => {
+    render(
+      <ResolvedDetailModal
+        incident={makeIncident({
+          evidence: [
+            { fileId: "a", url: "https://cdn.example/a.jpg", mimeType: "image/jpeg", uploadedAt: "2026-09-10T12:00:00.000Z" },
+            { fileId: "b", url: "", mimeType: "image/png", uploadedAt: "2026-09-11T08:30:00.000Z" },
+          ],
+        })}
+        onClose={() => {}}
+      />,
+    );
+
+    const el = screen.getByTestId("last-uploaded");
+    expect(el.textContent).toMatch(/^Last uploaded /);
+    // Latest of the two uploadedAt values wins.
+    expect(el.textContent).toContain("Sep 11, 2026");
+  });
   it("degrades empty-url entries to a pill instead of skipping them", () => {
     render(
       <ResolvedDetailModal
