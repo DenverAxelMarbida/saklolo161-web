@@ -129,6 +129,8 @@ describe("normalizeIncident", () => {
     expect(normalized.evidenceUploading).toBe(false);
     expect(normalized.evidenceExpectedCount).toBe(0);
     expect(normalized.evidenceFailedCount).toBe(0);
+    expect(normalized.evidenceAttempt).toBe(0);
+    expect(normalized.evidenceAttemptsTotal).toBe(0);
     expect(normalized.station).toBeNull();
     expect(normalized.dispatch).toBeNull();
     expect(normalized.resolvedAt).toBeNull();
@@ -140,11 +142,15 @@ describe("normalizeIncident", () => {
       evidenceUploading: true,
       evidenceExpectedCount: 3,
       evidenceFailedCount: 1,
+      evidenceAttempt: 2,
+      evidenceAttemptsTotal: 3,
     });
 
     expect(normalized.evidenceUploading).toBe(true);
     expect(normalized.evidenceExpectedCount).toBe(3);
     expect(normalized.evidenceFailedCount).toBe(1);
+    expect(normalized.evidenceAttempt).toBe(2);
+    expect(normalized.evidenceAttemptsTotal).toBe(3);
   });
 
   it("passes evidence through and resolves relative media urls against the API base", () => {

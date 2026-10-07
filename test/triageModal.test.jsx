@@ -150,6 +150,72 @@ describe("TriageModal", () => {
     expect(progress.style.width).toBe(`${(1 / 3) * 100}%`);
   });
 
+  it("shows the retry attempt line during an automatic retry, never a fake byte %", () => {
+    const incident = makeIncident({
+      evidence: [
+        {
+          fileId: "ev-1",
+          url: "http://localhost:5000/api/incidents/x/evidence/ev-1/media",
+          mimeType: "image/jpeg",
+          sizeKb: 900,
+          uploadedAt: "2026-09-10T12:00:00.000Z",
+        },
+      ],
+      evidenceUploading: true,
+      evidenceExpectedCount: 3,
+      evidenceAttempt: 2,
+      evidenceAttemptsTotal: 3,
+    });
+
+    const { container } = render(
+      <TriageModal
+        incident={incident}
+        onClose={() => {}}
+        onDispatched={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/Evidence retrying — attempt 2\/3/)).toBeTruthy();
+    // File-count bar only: no percent text anywhere in the modal.
+    expect(container.textContent).not.toMatch(/d+%/);
+    expect(screen.queryByTestId("evidence-done")).toBeNull();
+  });
+
+  it("confirms when every expected attachment has uploaded", () => {
+    const incident = makeIncident({
+      evidence: [
+        {
+          fileId: "ev-1",
+          url: "http://localhost:5000/api/incidents/x/evidence/ev-1/media",
+          mimeType: "image/jpeg",
+          sizeKb: 900,
+          uploadedAt: "2026-09-10T12:00:00.000Z",
+        },
+        {
+          fileId: "ev-2",
+          url: "http://localhost:5000/api/incidents/x/evidence/ev-2/media",
+          mimeType: "image/jpeg",
+          sizeKb: 700,
+          uploadedAt: "2026-09-10T12:01:00.000Z",
+        },
+      ],
+      evidenceUploading: false,
+      evidenceExpectedCount: 2,
+      evidenceFailedCount: 0,
+    });
+
+    render(
+      <TriageModal
+        incident={incident}
+        onClose={() => {}}
+        onDispatched={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("evidence-done").textContent).toBe(
+      "✓ 2 attachments uploaded"
+    );
+  });
   it("warns when some attachments failed after the upload loop finished", () => {
     const incident = makeIncident({
       evidence: [

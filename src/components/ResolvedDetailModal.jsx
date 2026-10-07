@@ -25,6 +25,13 @@ export default function ResolvedDetailModal({ incident, onClose }) {
   // empty url (pre-storage uploads) degrade to a labeled pill rather than
   // disappearing silently.
   const evidence = incident.evidence || [];
+  // Last successfully stored attachment, from the server's own
+  // `uploadedAt` (per-file receive time — nothing client-side).
+  const lastUploadedMs = evidence
+    .map((e) => (e.uploadedAt ? new Date(e.uploadedAt).getTime() : NaN))
+    .filter((t) => Number.isFinite(t))
+    .sort((a, b) => a - b)
+    .pop();
 
   return (
     <div
@@ -89,6 +96,11 @@ export default function ResolvedDetailModal({ incident, onClose }) {
                 <p className="mt-1 text-xs text-ink-dim">
                   {evidence.length} evidence file{evidence.length !== 1 ? "s" : ""}
                 </p>
+                {lastUploadedMs != null && (
+                  <p className="mt-0.5 text-xs text-ink-dim" data-testid="last-uploaded">
+                    Last uploaded {formatResolvedDate(new Date(lastUploadedMs).toISOString())}
+                  </p>
+                )}
                 <div className="mt-2">
                   <EvidenceGallery evidence={evidence} />
                 </div>

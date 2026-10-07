@@ -93,8 +93,13 @@ export default function ActiveQueue({
                   </span>
                 )}
                 {incident.evidenceUploading && (
-                  <span className="inline-block rounded border border-risk-mid/40 px-1.5 py-0.5 text-[10px] font-semibold text-risk-mid">
-                    ⏳ attaching evidence {incident.evidence.length}/{incident.evidenceExpectedCount}
+                  <span
+                    className="inline-block rounded border border-risk-mid/40 px-1.5 py-0.5 text-[10px] font-semibold text-risk-mid"
+                    data-testid="queue-evidence-chip"
+                  >
+                    {incident.evidenceAttempt >= 2 && incident.evidenceAttemptsTotal > 0
+                      ? `↻ retrying ${incident.evidenceAttempt}/${incident.evidenceAttemptsTotal}`
+                      : `⏳ attaching evidence ${incident.evidence.length}/${incident.evidenceExpectedCount}`}
                   </span>
                 )}
                 {incident.evidenceFailedCount > 0 && (

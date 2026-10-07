@@ -117,6 +117,8 @@ export const normalizeIncident = (i) => ({
   evidenceUploading: i.evidenceUploading ?? false,
   evidenceExpectedCount: i.evidenceExpectedCount ?? 0,
   evidenceFailedCount: i.evidenceFailedCount ?? 0,
+  evidenceAttempt: i.evidenceAttempt ?? 0,
+  evidenceAttemptsTotal: i.evidenceAttemptsTotal ?? 0,
   station: i.station ?? null,
   dispatch: i.dispatch || null,
   resolvedAt: i.resolvedAt ?? null,
