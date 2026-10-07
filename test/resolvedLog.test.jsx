@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import ResolvedLog from "../src/components/ResolvedLog";
 
 // ResolvedDetailModal pulls in the map; only mounts on row click (never
@@ -66,5 +66,49 @@ describe("ResolvedLog ordering", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toContain("INC-A");
     expect(rows[1]).toContain("INC-B");
+  });
+});
+
+describe("ResolvedLog live evidence sync", () => {
+  it("shows evidence that arrives AFTER the detail modal is open", async () => {
+    const stale = makeResolved({ id: "INC-LATE", evidence: [] });
+
+    const { rerender } = render(<ResolvedLog incidents={[stale]} query="" />);
+
+    // Dispatcher opens the resolved detail while evidence is still inbound.
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.queryByText(/evidence file/)).toBeNull();
+
+    // The citizen's upload lands on the next poll — the open modal must
+    // pick it up without a close/reopen or a browser refresh.
+    const fresh = makeResolved({
+      id: "INC-LATE",
+      evidence: [
+        {
+          fileId: "ev-1",
+          url: "/api/incidents/INC-LATE/evidence/ev-1/media",
+          mimeType: "image/jpeg",
+          sizeKb: 120,
+          uploadedAt: "2026-10-01T09:00:00.000Z",
+        },
+      ],
+    });
+    rerender(<ResolvedLog incidents={[fresh]} query="" />);
+
+    expect(await screen.findByText("1 evidence file")).toBeTruthy();
+  });
+
+  it("keeps the modal closed state when no fresh copy exists", async () => {
+    const stale = makeResolved({ id: "INC-GONE" });
+
+    const { rerender } = render(<ResolvedLog incidents={[stale]} query="" />);
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    // Incident dropped from the polled list (e.g. filtered out) — the open
+    // modal must not crash.
+    rerender(<ResolvedLog incidents={[]} query="" />);
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
