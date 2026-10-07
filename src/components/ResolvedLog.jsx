@@ -1,9 +1,20 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CATEGORIES } from "../lib/config";
 import ResolvedDetailModal from "./ResolvedDetailModal";
 
 export default function ResolvedLog({ incidents, query }) {
   const [selectedIncident, setSelectedIncident] = useState(null);
+
+  // Keep the open modal pointed at the freshest polled copy of that
+  // incident, mirroring App.jsx's selectedIncident sync. Evidence can
+  // arrive AFTER the row was clicked (a citizen's late upload/retry) —
+  // a frozen snapshot would hide it until the modal is closed and
+  // reopened, which the dispatcher should never have to do.
+  useEffect(() => {
+    if (!selectedIncident) return;
+    const fresh = incidents.find((i) => i.id === selectedIncident.id);
+    if (fresh && fresh !== selectedIncident) setSelectedIncident(fresh);
+  }, [incidents, selectedIncident]);
   const resolved = useMemo(
     () =>
       incidents
