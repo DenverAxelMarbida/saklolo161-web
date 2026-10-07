@@ -315,3 +315,41 @@ describe("TriageModal", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+describe("TriageModal — citizen contact and resilient text", () => {
+  it("renders the canonical citizen phone number from incident data", () => {
+    render(
+      <TriageModal
+        incident={makeIncident({ citizenPhone: "+639171234567" })}
+        onClose={() => {}}
+        onDispatched={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Phone Number")).toBeTruthy();
+    expect(screen.getByText("+639171234567")).toBeTruthy();
+  });
+
+  it("renders a graceful dash when the incident has no phone number", () => {
+    render(
+      <TriageModal incident={makeIncident()} onClose={() => {}} onDispatched={() => {}} />,
+    );
+
+    const heading = screen.getByText("Phone Number");
+    expect(heading.nextElementSibling.textContent).toBe("—");
+  });
+
+  it("renders a long caller-notes value without clipping or nowrap classes", () => {
+    const LONG_NOTES =
+      "Caller reports water entering the house near the bridge, neighbors trapped on the second floor, need immediate rescue.";
+    render(
+      <TriageModal
+        incident={makeIncident({ callerNotes: LONG_NOTES })}
+        onClose={() => {}}
+        onDispatched={() => {}}
+      />,
+    );
+
+    const notes = screen.getByText(LONG_NOTES);
+    expect(notes.className).not.toMatch(/truncate|whitespace-nowrap|line-clamp/);
+  });
+});

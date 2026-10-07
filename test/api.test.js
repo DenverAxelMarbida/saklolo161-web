@@ -10,6 +10,7 @@ import {
   setUserEnabled,
   changeOwnPassword,
 } from "../src/lib/api";
+import { PRODUCTION_INCIDENTS } from "./fixtures.production";
 import { resolveMediaUrl } from "../src/lib/api";
 
 const { mockGet, mockPost, mockPatch, apiInstance } = vi.hoisted(() => {
@@ -86,6 +87,17 @@ describe("normalizeIncident", () => {
     expect(normalized.resolvedAt).toBe("2026-09-08T01:00:00Z");
   });
 
+  it("keeps the canonical citizenPhone from the backend response", () => {
+    // Regression guard: this field used to be dropped by the normalizer,
+    // making the citizen's contact number invisible across every web view.
+    const normalized = normalizeIncident({
+      incidentId: "FIRE-24-0001",
+      citizenPhone: "+639171234567",
+    });
+
+    expect(normalized.citizenPhone).toBe("+639171234567");
+  });
+
   it("passes the station (with coords) through for DispatchTracker", () => {
     const normalized = normalizeIncident({
       incidentId: "FLOOD-24-0003",
@@ -134,6 +146,8 @@ describe("normalizeIncident", () => {
     expect(normalized.station).toBeNull();
     expect(normalized.dispatch).toBeNull();
     expect(normalized.resolvedAt).toBeNull();
+    // Legacy/mock records without a phone stay renderable ("—" in the UI).
+    expect(normalized.citizenPhone).toBe("");
   });
 
   it("passes the evidence-upload progress fields through for the queue/triage badges", () => {
@@ -174,6 +188,24 @@ describe("normalizeIncident", () => {
 
     expect(normalized.elapsedMinutes).toBeGreaterThanOrEqual(4);
     expect(normalized.elapsedMinutes).toBeLessThanOrEqual(6);
+  });
+
+  it("preserves resolvedBy when the backend provides it", () => {
+    // Passed through for forward-compatibility with backend writers;
+    // nothing renders it yet, but the normalizer must never drop a
+    // server-provided field.
+    const normalized = normalizeIncident({
+      incidentId: "FIRE-24-0001",
+      resolvedBy: "dispatcher@marikina.gov.ph",
+    });
+
+    expect(normalized.resolvedBy).toBe("dispatcher@marikina.gov.ph");
+  });
+
+  it("defaults resolvedBy to null when the backend omits it (never fabricated)", () => {
+    const normalized = normalizeIncident({ incidentId: "FIRE-24-0001" });
+
+    expect(normalized.resolvedBy).toBeNull();
   });
 });
 
@@ -434,5 +466,25 @@ describe("user management endpoints", () => {
 
     expect(mockPost).toHaveBeenCalledWith("/api/users/me/password", payload);
     expect(result.success).toBe(true);
+  });
+});
+
+describe("normalizeIncident — live production payload regression (captured 2026-10-07)", () => {
+  it("preserves resolvedAt EXACTLY as the production GET :id payload returns it", () => {
+    const dated = normalizeIncident(PRODUCTION_INCIDENTS["INC-20261007-9431"]);
+    expect(dated.resolvedAt).toBe("2026-10-07T14:40:30.168Z");
+  });
+
+  it("maps a production record that genuinely lacks the resolvedAt key to null (never fabricated)", () => {
+    // Historical incident from the user's screenshot — the deployed
+    // backend has never persisted resolvedAt for it.
+    const historical = normalizeIncident(PRODUCTION_INCIDENTS["INC-20261004-7190"]);
+    expect("resolvedAt" in PRODUCTION_INCIDENTS["INC-20261004-7190"]).toBe(false);
+    expect(historical.resolvedAt).toBeNull();
+
+    // Live probe incident: resolved at 15:50:56Z during the investigation;
+    // the deployed backend stamped only its PATCH response, not the store.
+    const probed = normalizeIncident(PRODUCTION_INCIDENTS["INC-20261007-5191"]);
+    expect(probed.resolvedAt).toBeNull();
   });
 });

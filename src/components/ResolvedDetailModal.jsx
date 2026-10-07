@@ -3,10 +3,16 @@ import { CATEGORIES } from "../lib/config";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import MiniIncidentMap from "./MiniIncidentMap";
 import EvidenceGallery from "./EvidenceGallery";
+import { chipInkStyle } from "./TriageModal";
 
-function formatResolvedDate(isoString) {
-  if (!isoString) return "N/A";
+// Single source of truth for the web's resolved-date convention —
+// exported so the Resolved Log cards render the exact same string.
+export function formatResolvedDate(isoString) {
+  // Graceful em dash (same convention as the phone/location fallbacks)
+  // instead of the literal "N/A" that used to render in the Resolved row.
+  if (!isoString) return "—";
   const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("en-PH", {
     year: "numeric",
     month: "short",
@@ -40,9 +46,9 @@ export default function ResolvedDetailModal({ incident, onClose }) {
       role="dialog"
       aria-modal="true"
       aria-label={`Resolved incident #${incident.id}`}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none animate-fade-in"
     >
-      <div className="flex max-h-[90vh] w-full max-w-3xl animate-pop-in flex-col overflow-hidden rounded-lg border border-border bg-panel">
+      <div className="flex max-h-[90vh] w-full max-w-3xl animate-pop-in flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-modal">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border p-4">
           <div className="flex items-center gap-2">
@@ -50,7 +56,7 @@ export default function ResolvedDetailModal({ incident, onClose }) {
               className="rounded px-2 py-1 text-xs font-semibold uppercase"
               style={{
                 backgroundColor: `color-mix(in srgb, ${category?.color || "#334155"} 20%, transparent)`,
-                color: category?.color || "#334155",
+                ...chipInkStyle(category?.color || "#334155"),
               }}
             >
               {category?.label || incident.category} EMERGENCY
@@ -81,6 +87,12 @@ export default function ResolvedDetailModal({ incident, onClose }) {
             <div>
               <h3 className="text-xs uppercase tracking-wide text-ink-dim">Incident Location</h3>
               <p className="mt-1 text-sm font-semibold">{incident.location || "Unknown location"}</p>
+            </div>
+
+            {/* Citizen contact — same canonical field as every other view */}
+            <div>
+              <h3 className="text-xs uppercase tracking-wide text-ink-dim">Phone Number</h3>
+              <p className="mt-1 text-sm font-semibold">{incident.citizenPhone || "—"}</p>
             </div>
 
             {/* Caller Notes */}
