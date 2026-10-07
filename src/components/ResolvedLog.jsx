@@ -71,17 +71,25 @@ export default function ResolvedLog({ incidents, query }) {
         <button
           key={incident.id}
           onClick={() => setSelectedIncident(incident)}
-          className="mb-2 w-full rounded-md border border-border bg-panel p-3 text-left shadow-panel transition-[background-color,border-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:bg-panel-hover hover:shadow-raised"
+          className="mb-2 w-full rounded-md border border-border bg-panel px-3.5 py-3 text-left shadow-panel transition-[background-color,border-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:bg-panel-hover hover:shadow-raised"
           style={{ borderLeft: `3px solid ${CATEGORIES[incident.category].color}` }}
         >
-          <div className="flex items-center justify-between">
+          {/* Metadata row: muted ID left, slightly stronger resolved
+              timestamp right — wraps as a pair on narrow rails instead
+              of overflowing. */}
+          <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
             <span className="font-mono text-xs text-ink-dim">#{incident.id}</span>
-            <span className="font-mono text-xs text-ink-dim">
+            <span className="font-mono text-xs text-ink">
               Resolved {formatResolvedDate(incident.resolvedAt)}
             </span>
           </div>
-          <div className="mt-1 text-sm">{incident.location}</div>
-          <span className="mt-2 inline-block rounded border border-resolved/40 bg-resolved/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-resolved">
+          {/* Decorative rule: separates "which incident / when" from
+              "where / what status" using the existing border token. */}
+          <div aria-hidden="true" className="mt-2.5 h-px bg-border" />
+          {/* Address is the card's primary content: it gets the air
+              above it, wraps naturally, and is never truncated. */}
+          <div className="mt-2.5 text-sm leading-snug break-words">{incident.location}</div>
+          <span className="mt-2.5 inline-block rounded border border-resolved/40 bg-resolved/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-resolved">
             {incident.category} · Resolved
           </span>
         </button>
