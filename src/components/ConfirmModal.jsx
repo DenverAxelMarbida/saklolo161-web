@@ -55,7 +55,7 @@ export default function ConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in"
       onClick={(event) => {
         if (event.target === event.currentTarget) cancelHandlerRef.current?.();
       }}
@@ -65,7 +65,7 @@ export default function ConfirmModal({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={messageId}
-        className="w-full max-w-md animate-pop-in overflow-hidden rounded-lg border border-border bg-panel"
+        className="w-full max-w-md animate-pop-in overflow-hidden rounded-lg border border-border bg-panel shadow-modal"
       >
         <div className="flex items-center justify-between border-b border-border p-4">
           <h2 id={titleId} className="text-sm font-semibold uppercase tracking-wide">

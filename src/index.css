@@ -32,6 +32,13 @@
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  /* Depth ladder (Level 1→3): panel cards sit flat-but-lifted, raised
+     is for hover/selected surfaces, modal floats over the scrim. Keeps
+     every shadow in the app coming from one vocabulary. */
+  --shadow-panel: 0 1px 2px 0 rgba(0, 0, 0, 0.35);
+  --shadow-raised: 0 6px 20px -6px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 24px 64px -16px rgba(0, 0, 0, 0.75);
 }
 
 html,
@@ -215,6 +222,53 @@ a[href],
   animation: sak-button-flash 0.6s ease-out 1;
 }
 
+/* Backdrop fade for modals — opacity only, 150ms, so the scrim reads
+   as lighting change rather than an effect. Panels keep their own
+   pop-in; this just stops the black overlay from hard-cutting. */
+@keyframes sak-fade-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: sak-fade-in 0.15s ease-out 1;
+}
+
+/* One-shot attention beat for the new-incident toast: a single
+   category-tinted ring that expands and vanishes (0.7s, once). Uses
+   the toast's --sak-accent custom property; never loops, never
+   flashes. */
+@keyframes sak-attention {
+  0% {
+    box-shadow:
+      0 10px 32px -8px rgba(0, 0, 0, 0.6),
+      0 0 0 0 color-mix(in srgb, var(--sak-accent, #f4b400) 55%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 10px 32px -8px rgba(0, 0, 0, 0.6),
+      0 0 0 14px color-mix(in srgb, var(--sak-accent, #f4b400) 0%, transparent);
+  }
+}
+
+.animate-attention {
+  animation: sak-attention 0.7s ease-out 1;
+}
+
+/* Toast entry = slide-up + attention ring in ONE animation declaration
+   (two classes setting `animation` on the same element would clobber
+   each other). Transform/opacity come from sak-slide-up, box-shadow
+   from sak-attention (listed last wins that property). */
+.animate-toast-entry {
+  animation:
+    sak-slide-up 0.25s ease-out 1,
+    sak-attention 0.7s ease-out 1;
+}
+
 /* Auth-screen hand-off (login <-> control room). Opacity only, never a
    transform: the control room root holds position:fixed overlays (triage,
    tracker, confirm dialogs) and a transformed ancestor would re-anchor them
@@ -308,6 +362,9 @@ a[href],
   .animate-marker-pulse,
   .animate-screen-in,
   .animate-view-in,
+  .animate-fade-in,
+  .animate-attention,
+  .animate-toast-entry,
   .animate-pulse {
     animation: none;
   }

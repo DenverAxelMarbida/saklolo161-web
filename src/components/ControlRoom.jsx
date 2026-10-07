@@ -13,6 +13,8 @@ export default function ControlRoom({
   initialAgency,
   newIncidentIds = [],
   onVisibleNewIncidents,
+  initialLoading = false,
+  selectedIncidentId = null,
 }) {
   // The category filter is shared between the queue, the map markers,
   // and the tally grid, so it lives here as ControlRoom state and is
@@ -82,7 +84,7 @@ export default function ControlRoom({
         />
       </section>
 
-      <aside className="overflow-hidden rounded-md border border-border bg-panel/40 p-3">
+      <aside className="overflow-hidden rounded-md border border-border bg-panel shadow-panel p-3">
         <div className="mb-3 flex gap-1 px-1">
           {[
             { key: "active", label: "Active" },
@@ -105,6 +107,9 @@ export default function ControlRoom({
           ))}
         </div>
 
+        {/* Cross-fade the rail content when swapping Active <->
+            Resolved so the swap reads as a deliberate view change. */}
+        <div key={queueView} className="flex h-full min-h-0 flex-col animate-view-in">
         {queueView === "active" ? (
           <ActiveQueue
             incidents={incidents}
@@ -112,6 +117,8 @@ export default function ControlRoom({
             activeFilter={activeFilter}
             onFilterChange={setActiveFilter}
             newIncidentIds={newIncidentIds}
+            initialLoading={initialLoading}
+            selectedIncidentId={selectedIncidentId}
           />
         ) : (
           <div className="flex h-full flex-col">
@@ -125,6 +132,7 @@ export default function ControlRoom({
             <ResolvedLog incidents={incidents} query={resolvedQuery} />
           </div>
         )}
+        </div>
       </aside>
     </div>
   );

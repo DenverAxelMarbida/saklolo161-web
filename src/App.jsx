@@ -19,7 +19,12 @@ import { onAuthChange, logout } from "./lib/auth";
 // sync with the incident it's describing.
 export default function App() {
   const [authState, setAuthState] = useState(null);
-  const { incidents, refresh, newIncidentIds } = useIncidentPolling();
+  // `loading` is the hook's FIRST-fetch flag (it never flips back to
+  // true — refresh()/the 10s tick don't re-arm it), which is exactly
+  // what the queue needs to distinguish "still loading" from "loaded,
+  // and there's genuinely nothing here".
+  const { incidents, refresh, newIncidentIds, loading: initialLoading } =
+    useIncidentPolling();
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [newIncidentToast, setNewIncidentToast] = useState(null);
   // Three simple views: the Control Room (default), the admin-only
@@ -167,6 +172,8 @@ export default function App() {
             initialAgency={authState.user.agency}
             newIncidentIds={newIncidentIds}
             onVisibleNewIncidents={handleVisibleNewIncidents}
+            initialLoading={initialLoading}
+            selectedIncidentId={selectedIncident?.id ?? null}
           />
         )}
       </main>

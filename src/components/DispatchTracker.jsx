@@ -22,6 +22,7 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
 
   const [resolving, setResolving] = useState(false);
   const [markingEnRoute, setMarkingEnRoute] = useState(false);
+  const [actionError, setActionError] = useState(null);
 
   // The station (and its coords) live at the TOP level of the incident,
   // not under `dispatch` — the backend exposes station.coords there.
@@ -86,28 +87,38 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
 
   const handleResolve = async () => {
     setResolving(true);
+    setActionError(null);
     try {
       await resolveIncident(incident.id);
-    } catch {
-      // Even if the network call fails, reflect the dispatcher's intent
-      // locally and let the next poll reconcile — a dispatcher shouldn't
-      // be blocked from marking something resolved by a flaky request.
-    } finally {
       setResolving(false);
       onResolved(incident.id);
+    } catch {
+      // A failed request must stay visible: closing the tracker anyway
+      // would show a false success. The modal stays open, the stepper
+      // keeps showing the server's real status, and the message below
+      // tells the dispatcher nothing was saved (the 10s poll keeps
+      // reconciling either way).
+      setResolving(false);
+      setActionError(
+        "Couldn't save that change. Check your connection and try again.",
+      );
     }
   };
 
   const handleMarkEnRoute = async () => {
     setMarkingEnRoute(true);
+    setActionError(null);
     try {
       await markEnRoute(incident.id);
-    } catch {
-      // Same UX choice as resolve: reflect the dispatcher's intent
-      // locally and let the next poll reconcile.
-    } finally {
       setMarkingEnRoute(false);
       onStatusUpdated(incident.id, "En Route");
+    } catch {
+      // Same as resolve: no silent optimistic flip — the status stays
+      // at the server's truth and the message below explains why.
+      setMarkingEnRoute(false);
+      setActionError(
+        "Couldn't save that change. Check your connection and try again.",
+      );
     }
   };
 
@@ -118,9 +129,9 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
       role="dialog"
       aria-modal="true"
       aria-label="Live Dispatch Tracker"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none animate-fade-in"
     >
-      <div className="flex max-h-[90vh] w-full max-w-3xl animate-pop-in flex-col overflow-hidden rounded-lg border border-border bg-panel">
+      <div className="flex max-h-[90vh] w-full max-w-3xl animate-pop-in flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-modal">
         <div className="flex items-center justify-between border-b border-border p-4">
           <div className="flex items-center gap-2">
             <span className="font-semibold">Live Dispatch Tracker</span>
@@ -195,6 +206,15 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
               {incident.dispatch?.estimatedTurnout ?? "—"}
             </div>
           </div>
+          {/* Full-width stat cell: the citizen contact belongs with the
+              incident facts, rendered from the same canonical
+              `citizenPhone` the backend returns. */}
+          <div className="col-span-4">
+            <div className="text-[11px] uppercase tracking-wide text-ink-dim">Phone Number</div>
+            <div className="font-mono text-lg font-semibold">
+              {incident.citizenPhone || "—"}
+            </div>
+          </div>
         </div>
 
         <div key={incident.status} className="animate-slide-up p-4 pt-0">
@@ -216,6 +236,12 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
             >
               {resolving ? "Marking Resolved…" : "MARK RESOLVED"}
             </button>
+          )}
+
+          {actionError && (
+            <p role="alert" className="mt-2 text-center text-xs text-fire">
+              {actionError}
+            </p>
           )}
         </div>
       </div>

@@ -60,12 +60,12 @@ export default function ChangePasswordModal({ onClose }) {
     <div
       ref={rootRef}
       tabIndex={-1}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-label="Change Password"
     >
-      <div className="w-full max-w-md animate-pop-in overflow-hidden rounded-lg border border-border bg-panel">
+      <div className="w-full max-w-md animate-pop-in overflow-hidden rounded-lg border border-border bg-panel shadow-modal">
         <div className="flex items-center justify-between border-b border-border p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide">
             Change Password
