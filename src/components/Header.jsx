@@ -31,7 +31,7 @@ export default function Header({ dutyOfficer, view, onNavigate, onLogout }) {
     <>
       <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-header px-4">
         <div className="flex items-center gap-2">
-          <span className="font-semibold tracking-tight">Marikina City MDRRMO</span>
+          <span className="font-semibold tracking-tight">Marikina City DRRMO</span>
           <span className="text-ink-dim">/</span>
           <span className="font-mono text-sm text-ink-dim">SAKLOLO 161</span>
         </div>
