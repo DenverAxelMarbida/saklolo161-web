@@ -20,21 +20,46 @@ import { useEffect, useMemo, useState } from "react";
 export default function EvidenceGallery({ evidence }) {
   const items = evidence || [];
 
+  // Records whose bytes the server can no longer serve (e.g. an image
+  // uploaded before a redeploy wiped the ephemeral disk) fire an error
+  // event on their <img>/<video>. Tracking those keys lets the preview
+  // degrade to the labeled pill below instead of leaving a broken frame.
+  const [failedKeys, setFailedKeys] = useState(() => new Set());
+  const markFailed = (file) => {
+    const key = file?.fileId ?? file?.url;
+    if (key == null) return;
+    setFailedKeys((prev) => {
+      if (prev.has(key)) return prev;
+      return new Set(prev).add(key);
+    });
+    // If the failure happened while the lightbox was open on this item,
+    // close it — the shrunk media list would otherwise strand the index.
+    setLightboxIndex(null);
+  };
+
   // Viewable media = records with a server-served url. Everything else
   // becomes a pill. Indexed separately so lightbox navigation only walks
   // actual media, and pills never show up in the counter.
   const media = useMemo(
-    () => items.filter((file) => typeof file !== "string" && file?.url),
-    [items],
+    () =>
+      items.filter(
+        (file) =>
+          typeof file !== "string" &&
+          file?.url &&
+          !failedKeys.has(file.fileId ?? file.url),
+      ),
+    [items, failedKeys],
   );
   const pills = useMemo(
     () =>
       items.filter((file) => {
         if (typeof file === "string") return true;
-        if (file?.url) return false;
-        return true;
+        if (!file?.url) return true;
+        // Served-but-failed records move from the grid to the pills so
+        // the evidence record (and its label) stays visible.
+        return failedKeys.has(file.fileId ?? file.url);
       }),
-    [items],
+    [items, failedKeys],
   );
 
   const [lightboxIndex, setLightboxIndex] = useState(null);
@@ -79,6 +104,7 @@ export default function EvidenceGallery({ evidence }) {
                   muted
                   playsInline
                   preload="metadata"
+                  onError={() => markFailed(file)}
                   className="h-full w-full object-cover"
                 />
                 <span className="absolute inset-0 flex items-center justify-center bg-black/25 transition-colors group-hover:bg-black/40">
@@ -103,6 +129,7 @@ export default function EvidenceGallery({ evidence }) {
                 <img
                   src={file.url}
                   alt="Incident evidence"
+                  onError={() => markFailed(file)}
                   className="h-full w-full object-cover transition-transform duration-200 hover:scale-105"
                 />
               </button>
@@ -137,7 +164,7 @@ export default function EvidenceGallery({ evidence }) {
           role="dialog"
           aria-modal="true"
           aria-label={`Evidence ${lightboxIndex + 1} of ${media.length}`}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 animate-fade-in"
           onClick={close}
         >
           <div
@@ -165,12 +192,14 @@ export default function EvidenceGallery({ evidence }) {
                   controls
                   autoPlay
                   playsInline
+                  onError={() => markFailed(active)}
                   className="max-h-[76vh] w-full"
                 />
               ) : (
                 <img
                   src={active.url}
                   alt="Incident evidence"
+                  onError={() => markFailed(active)}
                   className="max-h-[76vh] w-full object-contain"
                 />
               )}

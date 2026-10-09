@@ -16,6 +16,7 @@ export default function ControlRoom({
   loading = false,
   error = null,
   onRetry,
+  selectedIncidentId = null,
 }) {
   // The category filter is shared between the queue, the map markers,
   // and the tally grid, so it lives here as ControlRoom state and is
@@ -94,7 +95,7 @@ export default function ControlRoom({
         />
       </section>
 
-      <aside className="overflow-hidden rounded-md border border-border bg-panel/40 p-3">
+      <aside className="overflow-hidden rounded-md border border-border bg-panel shadow-panel p-3">
         {/* First-fetch failure disclosure: never silently swap to sample
             data without telling the dispatcher. Only after loading has
             settled (no flash mid-first-load), and never blocks the UI. */}
@@ -139,6 +140,9 @@ export default function ControlRoom({
           ))}
         </div>
 
+        {/* Cross-fade the rail content when swapping Active <->
+            Resolved so the swap reads as a deliberate view change. */}
+        <div key={queueView} className="flex h-full min-h-0 flex-col animate-view-in">
         {queueView === "active" ? (
           <ActiveQueue
             incidents={incidents}
@@ -148,6 +152,7 @@ export default function ControlRoom({
             newIncidentIds={newIncidentIds}
             loading={loading}
             error={error}
+            selectedIncidentId={selectedIncidentId}
           />
         ) : (
           <div className="flex h-full flex-col">
@@ -166,6 +171,7 @@ export default function ControlRoom({
             />
           </div>
         )}
+        </div>
       </aside>
     </div>
   );

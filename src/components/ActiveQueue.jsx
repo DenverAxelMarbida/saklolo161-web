@@ -41,6 +41,7 @@ export default function ActiveQueue({
   newIncidentIds = [],
   loading = false,
   error = null,
+  selectedIncidentId = null,
 }) {
   const pending = useMemo(
     () => incidents.filter((i) => i.status !== "RESOLVED"),
@@ -93,6 +94,19 @@ export default function ActiveQueue({
         )}
         {!loading && filtered.length === 0 && !error && (
           <div className="mt-6 rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-ink-dim">
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="mx-auto mb-2 h-6 w-6"
+            >
+              <rect x="3" y="4" width="18" height="13" rx="2" />
+              <path d="M3 13h5l1.5 2.5h5L16 13h5" />
+            </svg>
             No {activeFilter === "ALL" ? "" : activeFilter.toLowerCase()}{" "}
             incidents in queue.
           </div>
@@ -100,13 +114,17 @@ export default function ActiveQueue({
         {!loading &&
           filtered.map((incident) => {
           const isNew = newIncidentIds.includes(incident.id);
+          const isSelected = selectedIncidentId === incident.id;
           return (
             <button
               key={incident.id}
               onClick={() => onSelectIncident(incident)}
-              className={`w-full rounded-md border border-border bg-panel p-3 text-left transition-colors hover:bg-panel-hover${
-                isNew ? " animate-pop-in" : ""
-              }`}
+              data-selected={isSelected || undefined}
+              className={`w-full rounded-md border p-3 text-left shadow-panel transition-[background-color,border-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-raised${
+                isSelected
+                  ? " border-ink/50 bg-panel-hover ring-1 ring-ink/25"
+                  : " border-border bg-panel hover:bg-panel-hover"
+              }${isNew ? " animate-pop-in" : ""}`}
               style={{ borderLeft: `3px solid ${CATEGORIES[incident.category].color}` }}
             >
               <div className="flex items-center justify-between">
@@ -128,8 +146,13 @@ export default function ActiveQueue({
                   </span>
                 )}
                 {incident.evidenceUploading && (
-                  <span className="inline-block rounded border border-risk-mid/40 px-1.5 py-0.5 text-[10px] font-semibold text-risk-mid">
-                    ⏳ attaching evidence {incident.evidence.length}/{incident.evidenceExpectedCount}
+                  <span
+                    className="inline-block rounded border border-risk-mid/40 px-1.5 py-0.5 text-[10px] font-semibold text-risk-mid"
+                    data-testid="queue-evidence-chip"
+                  >
+                    {incident.evidenceAttempt >= 2 && incident.evidenceAttemptsTotal > 0
+                      ? `↻ retrying ${incident.evidenceAttempt}/${incident.evidenceAttemptsTotal}`
+                      : `⏳ attaching evidence ${incident.evidence.length}/${incident.evidenceExpectedCount}`}
                   </span>
                 )}
                 {incident.evidenceFailedCount > 0 && (

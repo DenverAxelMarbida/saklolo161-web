@@ -153,6 +153,92 @@ describe("WeatherCard — background refresh", () => {
   });
 });
 
+describe("WeatherCard dynamic condition graphics", () => {
+  const graphic = (container, key) =>
+    container.querySelector(`svg[data-condition="${key}"]`);
+
+  const renderWithCondition = (condition, tempC = 31) => {
+    const { container } = render(
+      <WeatherCard
+        loading={false}
+        weather={{
+          tempC,
+          condition,
+          humidity: "82%",
+          wind: "12km/h",
+          risk: "LOW",
+        }}
+      />,
+    );
+    return container;
+  };
+
+  // The API only sends condition text (OpenWeather `weather[0].main`,
+  // plus the backend's "Partly Cloudy" fallback) — these are the exact
+  // values the backend can produce. Mobile maps the same strings to
+  // the same semantic keys.
+  const CONDITION_CASES = [
+    ["Clear", "clear"],
+    ["Clouds", "cloud"],
+    ["Overcast", "cloud"],
+    ["Partly Cloudy", "partly"],
+    ["Rain", "rain"],
+    ["Drizzle", "drizzle"],
+    ["Thunderstorm", "storm"],
+    ["Fog", "fog"],
+    ["Mist", "fog"],
+    ["Haze", "fog"],
+    ["Snow", "snow"],
+  ];
+
+  for (const [condition, key] of CONDITION_CASES) {
+    it(`maps "${condition}" to the ${key} graphic`, () => {
+      const container = renderWithCondition(condition);
+      expect(graphic(container, key)).toBeTruthy();
+    });
+  }
+
+  it("renders the small graphic beside a readable temperature and condition text", () => {
+    const container = renderWithCondition("Thunderstorm", 31);
+
+    expect(screen.getByText("31°C")).toBeTruthy();
+    expect(screen.getByText("Thunderstorm")).toBeTruthy();
+    // graphic stays small and inline — it supports the temperature
+    // rather than dominating the card.
+    expect(graphic(container, "storm")).toBeTruthy();
+    expect(
+      container.innerHTML.indexOf('data-condition="storm"'),
+    ).toBeLessThan(container.innerHTML.indexOf("31°C"));
+  });
+
+  it("falls back to the neutral cloud graphic for unknown condition text", () => {
+    const container = renderWithCondition("Unrecognized Phenomenon");
+
+    expect(graphic(container, "cloud")).toBeTruthy();
+    expect(container.querySelector('svg[data-condition="clear"]')).toBeNull();
+    expect(screen.getByText("Unrecognized Phenomenon")).toBeTruthy();
+  });
+
+  it("keeps the glyph decorative and risk-tinted per the reported level", () => {
+    const { container } = render(
+      <WeatherCard
+        loading={false}
+        weather={{
+          tempC: 31,
+          condition: "Thunderstorm",
+          humidity: "82%",
+          wind: "12km/h",
+          risk: "HIGH",
+        }}
+      />,
+    );
+
+    const glyph = graphic(container, "storm");
+    expect(glyph.getAttribute("aria-hidden")).toBe("true");
+    expect(glyph.closest(".text-risk-high")).toBeTruthy();
+  });
+});
+
 describe("RiverLevelCard", () => {
   it("shows a placeholder while loading", () => {
     render(<RiverLevelCard loading river={null} />);

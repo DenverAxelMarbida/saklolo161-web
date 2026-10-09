@@ -45,12 +45,15 @@ export default function NewIncidentToast({ toast, onClose }) {
       aria-live="polite"
       data-theme={theme.key}
       data-accent={theme.accent}
-      className="animate-slide-up fixed top-16 right-4 z-40 w-72 rounded-md border border-border bg-panel p-3 shadow-lg shadow-black/40"
+      className="animate-toast-entry fixed top-16 right-4 z-40 w-72 rounded-md border border-border bg-panel p-3 shadow-lg shadow-black/40"
       style={{
         borderLeft: `4px solid ${theme.accent}`,
         // Subtle left-to-right category wash over the panel — same
         // color-mix approach the marker pulse in index.css already uses.
         backgroundImage: `linear-gradient(to right, color-mix(in srgb, ${theme.accent} 14%, transparent), transparent 70%)`,
+        // Feeds the one-shot sak-attention ring keyframe; the ring
+        // inherits the incident's category color (or neutral accent).
+        "--sak-accent": theme.accent,
       }}
     >
       <div className="flex items-start justify-between gap-2">

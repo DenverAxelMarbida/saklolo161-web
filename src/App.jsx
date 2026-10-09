@@ -37,6 +37,10 @@ export default function App() {
     () => setRestore((r) => ({ status: "pending", attempt: r.attempt + 1 })),
     [],
   );
+  // `loading` is the hook's FIRST-fetch flag (it never flips back to
+  // true — refresh()/the 10s tick don't re-arm it), which is exactly
+  // what the queue needs to distinguish "still loading" from "loaded,
+  // and there's genuinely nothing here".
   const { incidents, loading, error, refresh, newIncidentIds } =
     useIncidentPolling();
   const [selectedIncident, setSelectedIncident] = useState(null);
@@ -257,6 +261,7 @@ export default function App() {
             loading={loading}
             error={error}
             onRetry={refresh}
+            selectedIncidentId={selectedIncident?.id ?? null}
           />
         )}
       </main>

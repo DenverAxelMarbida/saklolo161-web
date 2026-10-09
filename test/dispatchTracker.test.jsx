@@ -80,8 +80,9 @@ describe("DispatchTracker metric readout", () => {
   it("renders an em-dash turnout when no dispatch exists yet", async () => {
     renderTracker(makeIncident({ dispatch: null }));
 
-    const dashes = await screen.findAllByText("—");
-    expect(dashes.length).toBe(1);
+    const turnoutLabel = await screen.findByText("Turnout");
+    // Scope to the turnout cell — other stats (e.g. phone) also fall back to a dash.
+    expect(turnoutLabel.nextElementSibling.textContent).toBe("—");
   });
 
   it("marks the distance as approximate until the real route arrives", async () => {
@@ -136,5 +137,22 @@ describe("DispatchTracker — dialog dismissal", () => {
     const button = screen.getByText("MARK EN ROUTE");
     expect(button.className).toContain("bg-risk-mid");
     expect(button.className).toContain("text-header");
+  });
+});
+describe("DispatchTracker — citizen phone", () => {
+  it("renders the canonical phone number in the incident facts grid", () => {
+    fetchRoute.mockResolvedValue({ geometry: null });
+    renderTracker(makeIncident({ citizenPhone: "+639171234567" }));
+
+    expect(screen.getByText("Phone Number")).toBeTruthy();
+    expect(screen.getByText("+639171234567")).toBeTruthy();
+  });
+
+  it("shows a graceful dash when the incident has no phone number", () => {
+    fetchRoute.mockResolvedValue({ geometry: null });
+    renderTracker(makeIncident());
+
+    const label = screen.getByText("Phone Number");
+    expect(label.nextElementSibling.textContent).toBe("—");
   });
 });

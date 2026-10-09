@@ -15,6 +15,8 @@ function makeIncident(overrides = {}) {
     evidenceUploading: false,
     evidenceExpectedCount: 0,
     evidenceFailedCount: 0,
+    evidenceAttempt: 0,
+    evidenceAttemptsTotal: 0,
     station: null,
     dispatch: null,
     resolvedAt: null,
@@ -54,6 +56,20 @@ describe("ActiveQueue", () => {
     expect(screen.getByText(/⏳ attaching evidence 1\/3/)).toBeTruthy();
   });
 
+  it("shows an honest retry chip when an automatic attempt is in flight", () => {
+    renderQueue([
+      makeIncident({
+        evidence: [{ fileId: "ev-1", url: "" }],
+        evidenceUploading: true,
+        evidenceExpectedCount: 3,
+        evidenceAttempt: 2,
+        evidenceAttemptsTotal: 3,
+      }),
+    ]);
+
+    expect(screen.getByTestId("queue-evidence-chip").textContent).toBe("↻ retrying 2/3");
+    expect(screen.queryByText(/%/)).toBeNull();
+  });
   it("flags a report with failed attachments once the loop finishes", () => {
     renderQueue([
       makeIncident({
@@ -187,5 +203,31 @@ describe("ActiveQueue — filter chips", () => {
 
     expect(screen.getByRole("button", { name: "ALL" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "FLOOD" }).getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+describe("ActiveQueue — long values", () => {
+  it("renders a long location in full with no clipping or nowrap classes", () => {
+    const LONG_LOCATION =
+      "780 Quezon Boulevard Barangay 391, Manila, Philippines";
+    renderQueue([makeIncident({ location: LONG_LOCATION })]);
+
+    const location = screen.getByText(LONG_LOCATION);
+    expect(location.className).not.toMatch(
+      /truncate|whitespace-nowrap|line-clamp/,
+    );
+  });
+
+  it("keeps category and status rendering unchanged alongside long values", () => {
+    renderQueue([
+      makeIncident({
+        location: "780 Quezon Boulevard Barangay 391, Manila, Philippines",
+        category: "CRIME",
+        status: "DISPATCHED",
+      }),
+    ]);
+
+    expect(screen.getByText("CRIME")).toBeTruthy();
+    expect(screen.getByText("DISPATCHED")).toBeTruthy();
   });
 });
