@@ -13,6 +13,9 @@ export default function ControlRoom({
   initialAgency,
   newIncidentIds = [],
   onVisibleNewIncidents,
+  loading = false,
+  error = null,
+  onRetry,
 }) {
   // The category filter is shared between the queue, the map markers,
   // and the tally grid, so it lives here as ControlRoom state and is
@@ -27,7 +30,14 @@ export default function ControlRoom({
   );
   const [queueView, setQueueView] = useState("active");
   const [resolvedQuery, setResolvedQuery] = useState("");
-  const { weather, river, updatedAt, loading, error, refetch } = useWeatherRiver();
+  const {
+    weather,
+    river,
+    updatedAt,
+    loading: weatherLoading,
+    error: weatherError,
+    refetch,
+  } = useWeatherRiver();
 
   // Only surface a new incident to the toast when it would actually be
   // visible in this dispatcher's current view (category filter + not
@@ -53,15 +63,15 @@ export default function ControlRoom({
       <aside className="space-y-3 overflow-y-auto">
         <WeatherCard
           weather={weather}
-          loading={loading}
-          error={error}
+          loading={weatherLoading}
+          error={weatherError}
           onRetry={refetch}
           updatedAt={updatedAt}
         />
         <RiverLevelCard
           river={river}
-          loading={loading}
-          error={error}
+          loading={weatherLoading}
+          error={weatherError}
           onRetry={refetch}
           updatedAt={updatedAt}
         />
@@ -70,6 +80,7 @@ export default function ControlRoom({
           activeFilter={activeFilter}
           onSelectFilter={setActiveFilter}
           agency={initialAgency}
+          loading={loading}
         />
       </aside>
 
@@ -79,10 +90,33 @@ export default function ControlRoom({
           onSelectIncident={onSelectIncident}
           activeFilter={activeFilter}
           newIncidentIds={newIncidentIds}
+          incidentsLoading={loading}
         />
       </section>
 
       <aside className="overflow-hidden rounded-md border border-border bg-panel/40 p-3">
+        {/* First-fetch failure disclosure: never silently swap to sample
+            data without telling the dispatcher. Only after loading has
+            settled (no flash mid-first-load), and never blocks the UI. */}
+        {error && !loading && (
+          <div
+            role="alert"
+            className="mb-3 rounded-md border border-fire/40 bg-fire/10 px-3 py-2 text-xs text-fire"
+          >
+            <span>
+              Live incident feed unavailable — data may be stale or sample
+              data.
+            </span>
+            {typeof onRetry === "function" && (
+              <button
+                onClick={onRetry}
+                className="ml-2 rounded border border-fire/50 px-2 py-0.5 font-semibold hover:bg-fire/20"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
         <div className="mb-3 flex gap-1 px-1">
           {[
             { key: "active", label: "Active" },
@@ -112,6 +146,8 @@ export default function ControlRoom({
             activeFilter={activeFilter}
             onFilterChange={setActiveFilter}
             newIncidentIds={newIncidentIds}
+            loading={loading}
+            error={error}
           />
         ) : (
           <div className="flex h-full flex-col">
@@ -122,7 +158,12 @@ export default function ControlRoom({
               placeholder="Search resolved..."
               className="mb-3 w-full rounded-md border border-border bg-panel px-2.5 py-1.5 text-xs text-ink placeholder:text-ink-dim/50 focus:border-ink-dim focus:outline-none"
             />
-            <ResolvedLog incidents={incidents} query={resolvedQuery} />
+            <ResolvedLog
+              incidents={incidents}
+              query={resolvedQuery}
+              loading={loading}
+              error={error}
+            />
           </div>
         )}
       </aside>

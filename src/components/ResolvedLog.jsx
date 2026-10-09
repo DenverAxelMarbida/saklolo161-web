@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { CATEGORIES } from "../lib/config";
 import ResolvedDetailModal from "./ResolvedDetailModal";
+import Skeleton from "./Skeleton";
 
-export default function ResolvedLog({ incidents, query }) {
+export default function ResolvedLog({ incidents, query, loading = false, error = null }) {
   const [selectedIncident, setSelectedIncident] = useState(null);
   const resolved = useMemo(
     () =>
@@ -35,12 +36,38 @@ export default function ResolvedLog({ incidents, query }) {
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto px-1 pb-2">
-      {filtered.length === 0 && (
+      {loading && (
+        <div
+          role="status"
+          aria-label="Loading resolved incidents"
+          className="space-y-2"
+        >
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="rounded-md border border-border bg-panel p-3">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-3 w-14" />
+              </div>
+              <Skeleton className="mt-2 h-4 w-3/4" />
+              <Skeleton className="mt-2 h-4 w-1/3" />
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Only a completed, successful load may claim emptiness — a failed
+          fetch is an error state, never "no resolved incidents yet". */}
+      {!loading && error && resolved.length === 0 && (
+        <div className="mt-6 rounded-md border border-dashed border-fire/40 bg-fire/10 px-3 py-6 text-center text-sm text-fire">
+          Couldn't load resolved incidents. The live feed is unavailable.
+        </div>
+      )}
+      {!loading && (resolved.length > 0 || !error) && filtered.length === 0 && (
         <div className="mt-6 rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-ink-dim">
           No resolved incidents yet.
         </div>
       )}
-      {filtered.map((incident) => (
+      {!loading &&
+        filtered.map((incident) => (
         <button
           key={incident.id}
           onClick={() => setSelectedIncident(incident)}

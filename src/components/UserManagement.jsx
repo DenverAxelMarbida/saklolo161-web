@@ -10,6 +10,7 @@ import { isStrongPassword } from "../lib/passwordPolicy";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import PasswordRequirements from "./PasswordRequirements";
 import PasswordInput from "./PasswordInput";
+import Skeleton from "./Skeleton";
 
 // Agencies come from the config source of truth (single source of
 // truth for categories), plus ALL for the cross-agency admin seat.
@@ -166,7 +167,10 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
   );
 }
 
-export default function UserManagement() {
+// standalone (default) it owns its full-page scroll wrapper; embedded
+// inside Settings it renders just its content, letting the Settings
+// section own the scroll/padding instead of nesting two scroll areas.
+export default function UserManagement({ embedded = false }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -182,6 +186,7 @@ export default function UserManagement() {
   const [modalError, setModalError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [confirmDisableUid, setConfirmDisableUid] = useState(null);
+  const [pendingToggleUid, setPendingToggleUid] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -261,6 +266,10 @@ export default function UserManagement() {
   };
 
   const handleSetEnabled = async (user, enabled) => {
+    // One toggle at a time: a disabled double-click must never fire a
+    // second PATCH for the same (or another) row.
+    if (pendingToggleUid != null) return;
+    setPendingToggleUid(user.uid);
     setBannerError(null);
     try {
       await setUserEnabled(user.uid, enabled);
@@ -269,15 +278,21 @@ export default function UserManagement() {
     } catch (err) {
       setConfirmDisableUid(null);
       setBannerError(errorMessage(err, "Couldn't update the user status. Try again."));
+    } finally {
+      setPendingToggleUid(null);
     }
   };
 
+  // Embedded: Settings already provides the scroll container and the
+  // max-w wrapper — skip both so padding/scrollbars don't double up.
+  const Heading = embedded ? "h2" : "h1";
+
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="mx-auto w-full max-w-4xl">
+    <div className={embedded ? "" : "h-full overflow-y-auto p-6"}>
+      <div className={embedded ? "" : "mx-auto w-full max-w-4xl"}>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold">User Management</h1>
+            <Heading className="text-lg font-semibold">User Management</Heading>
             <p className="text-sm text-ink-dim">
               Manage dispatcher and admin accounts for the control room.
             </p>
@@ -296,21 +311,56 @@ export default function UserManagement() {
           </p>
         )}
 
-        {loading && (
-          <p className="mt-6 text-center text-sm text-ink-dim">Loading users…</p>
+        {/* Initial load only (no rows yet) gets the skeleton; a
+            background refetch after a mutation keeps the rows up. */}
+        {loading && users.length === 0 && (
+          <div
+            role="status"
+            aria-label="Loading users"
+            className="mt-6 space-y-2"
+          >
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 rounded-md border border-border bg-panel p-3"
+              >
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-4 w-14" />
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            ))}
+          </div>
         )}
 
-        {!loading && loadError && (
-          <p className="mt-6 rounded border border-fire/40 bg-fire/10 p-3 text-sm text-fire">
-            {loadError}
-          </p>
+        {/* Failure keeps any stale rows visible alongside the error —
+            never swap a populated list for an empty-looking one.
+            role="alert" announces the failure; Retry re-runs load().
+            load() clears the error while it runs, so a second click
+            can never stack a request: the button can't exist mid-load. */}
+        {loadError && (
+          <div
+            role="alert"
+            className="mt-6 rounded border border-fire/40 bg-fire/10 p-3 text-sm text-fire"
+          >
+            <span>{loadError}</span>
+            <button
+              type="button"
+              onClick={load}
+              disabled={loading}
+              className="ml-2 rounded border border-fire/50 px-2 py-0.5 font-semibold hover:bg-fire/20 disabled:opacity-60"
+            >
+              Retry
+            </button>
+          </div>
         )}
 
         {!loading && !loadError && users.length === 0 && (
           <p className="mt-6 text-center text-sm text-ink-dim">No users found.</p>
         )}
 
-        {!loading && !loadError && users.length > 0 && (
+        {users.length > 0 && (
           <table className="mt-4 w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-dim">
@@ -349,7 +399,8 @@ export default function UserManagement() {
                       {user.disabled ? (
                         <button
                           onClick={() => handleSetEnabled(user, true)}
-                          className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink"
+                          disabled={pendingToggleUid != null}
+                          className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink disabled:opacity-60"
                         >
                           Enable
                         </button>
@@ -357,13 +408,15 @@ export default function UserManagement() {
                         <>
                           <button
                             onClick={() => handleSetEnabled(user, false)}
-                            className="rounded-md border border-fire/40 bg-fire/10 px-2 py-1 text-xs font-semibold text-fire"
+                            disabled={pendingToggleUid != null}
+                            className="rounded-md border border-fire/40 bg-fire/10 px-2 py-1 text-xs font-semibold text-fire disabled:opacity-60"
                           >
                             Confirm disable
                           </button>
                           <button
                             onClick={() => setConfirmDisableUid(null)}
-                            className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink"
+                            disabled={pendingToggleUid != null}
+                            className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink disabled:opacity-60"
                           >
                             Cancel
                           </button>
@@ -371,7 +424,8 @@ export default function UserManagement() {
                       ) : (
                         <button
                           onClick={() => setConfirmDisableUid(user.uid)}
-                          className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-fire"
+                          disabled={pendingToggleUid != null}
+                          className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-fire disabled:opacity-60"
                         >
                           Disable
                         </button>

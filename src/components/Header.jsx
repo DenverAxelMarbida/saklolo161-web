@@ -27,13 +27,19 @@ export default function Header({ dutyOfficer, view, onNavigate, onLogout }) {
     .join("")
     .toUpperCase();
 
+  // The legacy "users" entry lands inside Settings (User Management is
+  // a Settings tab now), so both views mark the gear as current.
+  const onSettingsSection = view === "settings" || view === "users";
+
   return (
     <>
       <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-header px-4">
         <div className="flex items-center gap-2">
-          <span className="font-semibold tracking-tight">Marikina City MDRRMO</span>
-          <span className="text-ink-dim">/</span>
-          <span className="font-mono text-sm text-ink-dim">SAKLOLO 161</span>
+          <span className="font-semibold tracking-tight">Saklolo 161</span>
+          <span className="text-ink-dim" aria-hidden="true">
+            –
+          </span>
+          <span className="text-sm text-ink-dim">Marikina City DRRMO</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -41,9 +47,9 @@ export default function Header({ dutyOfficer, view, onNavigate, onLogout }) {
             onClick={() => onNavigate("settings")}
             aria-label="Settings"
             title="Settings"
-            aria-current={view === "settings" ? "page" : undefined}
+            aria-current={onSettingsSection ? "page" : undefined}
             className={`rounded-md border px-2 py-1.5 transition-colors ${
-              view === "settings"
+              onSettingsSection
                 ? "border-medical/50 bg-white/10 text-ink"
                 : "border-white/10 bg-white/5 text-ink-dim hover:text-ink"
             }`}

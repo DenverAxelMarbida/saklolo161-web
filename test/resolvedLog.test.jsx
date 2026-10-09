@@ -32,6 +32,44 @@ function rowIds() {
     .map((button) => button.textContent);
 }
 
+describe("ResolvedLog — loading and error states", () => {
+  it("shows skeleton rows instead of the empty message while loading", () => {
+    render(<ResolvedLog incidents={[]} query="" loading />);
+
+    expect(screen.queryByText("No resolved incidents yet.")).toBeNull();
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("aria-label")).toBe("Loading resolved incidents");
+    expect(status.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+  });
+
+  it("shows an error state instead of claiming the log is empty when the load failed", () => {
+    render(
+      <ResolvedLog incidents={[]} query="" error={new Error("network down")} />,
+    );
+
+    expect(screen.queryByText("No resolved incidents yet.")).toBeNull();
+    expect(screen.getByText(/couldn't load resolved incidents/i)).toBeTruthy();
+  });
+
+  it("keeps the genuine empty message once loading finishes without error", () => {
+    render(<ResolvedLog incidents={[]} query="" />);
+    expect(screen.getByText("No resolved incidents yet.")).toBeTruthy();
+  });
+
+  it("still lists resolved incidents alongside a background refresh error", () => {
+    render(
+      <ResolvedLog
+        incidents={[makeResolved()]}
+        query=""
+        error={new Error("network down")}
+      />,
+    );
+
+    expect(screen.getByText("#INC-1")).toBeTruthy();
+    expect(screen.queryByText(/couldn't load resolved incidents/i)).toBeNull();
+  });
+});
+
 describe("ResolvedLog ordering", () => {
   it("lists the most recently resolved incident first", () => {
     const older = makeResolved({

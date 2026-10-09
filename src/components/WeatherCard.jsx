@@ -147,8 +147,16 @@ export default function WeatherCard({ weather, loading, error, onRetry, updatedA
             </p>
           )}
 
-          {clock && (
-            <p className="mt-2 text-[11px] text-ink-dim">Updated {clock}</p>
+          {/* Background refresh: the reading stays put and the footer
+              swaps the (about-to-stale) timestamp for a subtle cue. */}
+          {loading ? (
+            <p className="mt-2 animate-pulse text-[11px] text-ink-dim">
+              Refreshing…
+            </p>
+          ) : (
+            clock && (
+              <p className="mt-2 text-[11px] text-ink-dim">Updated {clock}</p>
+            )
           )}
         </>
       ) : showAsError ? (

@@ -19,6 +19,10 @@ vi.mock("../src/lib/auth", () => ({
     callback(authState.payload);
     return () => {};
   },
+  onAuthRestore: (callback) => {
+    callback();
+    return () => {};
+  },
   logout: vi.fn(),
   login: vi.fn(),
   getStoredAuth: vi.fn(() => authState.payload),
@@ -96,9 +100,11 @@ describe("Header — Settings gear button", () => {
     const gear = screen.getByLabelText("Settings");
     expect(gear.getAttribute("title")).toBe("Settings");
 
-    // Existing header functionality intact.
+    // Existing header functionality intact + new branding.
     expect(screen.getByText("Logout")).toBeTruthy();
-    expect(screen.getByText("SAKLOLO 161")).toBeTruthy();
+    expect(screen.getByText("Saklolo 161")).toBeTruthy();
+    expect(screen.getByText("Marikina City DRRMO")).toBeTruthy();
+    expect(screen.queryByText("Marikina City MDRRMO")).toBeNull();
 
     // Redundant controls are gone from the header — Settings is the single
     // entry point for both (asserted below, not duplicated here).
@@ -126,7 +132,8 @@ describe("Header — Settings gear button", () => {
     expect(container.querySelector("input")).toBeNull();
 
     // Everything else survives the removal.
-    expect(screen.getByText("SAKLOLO 161")).toBeTruthy();
+    expect(screen.getByText("Saklolo 161")).toBeTruthy();
+    expect(screen.getByText("Marikina City DRRMO")).toBeTruthy();
     expect(screen.getByLabelText("Settings")).toBeTruthy();
     expect(screen.getByText("fire@marikina.gov.ph")).toBeTruthy();
     expect(screen.getByText("Logout")).toBeTruthy();
@@ -216,19 +223,37 @@ describe("Settings view", () => {
     expect(screen.getByLabelText("Current Password")).toBeTruthy();
   });
 
-  it("admin sees the User Management card with its description and opens the existing view", () => {
+  it("admin gets a User Management tab inside Settings that opens the existing component inline", async () => {
     const onNavigate = vi.fn();
     render(<Settings user={adminUser} onNavigate={onNavigate} />);
 
-    expect(screen.getByRole("heading", { name: "User Management" })).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Manage dispatcher and administrator accounts, roles, agencies, and account status.",
-      ),
-    ).toBeTruthy();
+    // The section is reachable as a Settings tab — no card, no redirect.
+    expect(screen.getByRole("tab", { name: "My Account" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "User Management" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "My Account" })).toBeTruthy();
+    expect(screen.queryByText("Add User")).toBeNull();
 
-    fireEvent.click(screen.getByText("Open User Management"));
-    expect(onNavigate).toHaveBeenCalledWith("users");
+    fireEvent.click(screen.getByRole("tab", { name: "User Management" }));
+
+    // The EXISTING UserManagement component renders inside Settings.
+    expect(await screen.findByText("Add User")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "User Management" }),
+    ).toBeTruthy();
+    // Stays in Settings — never navigates to a separate view.
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(screen.queryByText("Back to Control Room")).toBeTruthy();
+  });
+
+  it("admin: initialSection=\"users\" opens Settings directly on the User Management tab", async () => {
+    render(
+      <Settings user={adminUser} onNavigate={() => {}} initialSection="users" />,
+    );
+
+    expect(
+      screen.getByRole("tab", { name: "User Management" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(await screen.findByText("Add User")).toBeTruthy();
   });
 
   it("dispatcher does NOT see any User Management option", () => {
@@ -237,6 +262,7 @@ describe("Settings view", () => {
       <Settings user={dispatcherUser} onNavigate={onNavigate} />,
     );
 
+    expect(screen.queryByRole("tab", { name: "User Management" })).toBeNull();
     expect(within(container).queryByText("User Management")).toBeNull();
     expect(within(container).queryByText("Open User Management")).toBeNull();
     expect(onNavigate).not.toHaveBeenCalledWith("users");
@@ -309,32 +335,27 @@ describe("App — Settings view switching", () => {
     expect(screen.queryByText("User Management")).toBeNull();
   });
 
-  it("admin: Settings -> User Management -> gear back to Settings -> Control Room", async () => {
+  it("admin: gear to Settings -> User Management tab inline -> Back to Control Room", async () => {
     authState.payload = { token: "test-token", user: adminUser };
     render(<App />);
 
     fireEvent.click(screen.getByLabelText("Settings"));
 
     let main = screen.getByRole("main");
-    expect(within(main).getByRole("heading", { name: "User Management" })).toBeTruthy();
-    expect(
-      within(main).getByText(
-        "Manage dispatcher and administrator accounts, roles, agencies, and account status.",
-      ),
-    ).toBeTruthy();
+    expect(within(main).getByRole("heading", { name: "Settings" })).toBeTruthy();
     expect(within(main).getByText("admin@marikina.gov.ph")).toBeTruthy();
+    expect(within(main).getByRole("tab", { name: "User Management" })).toBeTruthy();
 
-    // Settings -> User Management opens the EXISTING view.
-    fireEvent.click(within(main).getByText("Open User Management"));
-    expect(await screen.findByText("Add User")).toBeTruthy();
+    // Switching tabs opens the EXISTING UserManagement component INSIDE
+    // Settings — no separate view, no redirect.
+    fireEvent.click(within(main).getByRole("tab", { name: "User Management" }));
+    expect(await within(main).findByText("Add User")).toBeTruthy();
+    expect(
+      within(main).getByRole("heading", { name: "Settings" }),
+    ).toBeTruthy();
     expect(screen.queryByTestId("control-room")).toBeNull();
 
-    // User Management -> Settings via the header gear.
-    fireEvent.click(screen.getByLabelText("Settings"));
-    main = screen.getByRole("main");
-    expect(within(main).getByRole("heading", { name: "Settings" })).toBeTruthy();
-
-    // Settings -> Control Room.
+    // Settings -> Control Room, straight from the integrated section.
     fireEvent.click(within(main).getByText("Back to Control Room"));
     expect(await screen.findByTestId("control-room")).toBeTruthy();
   });

@@ -176,6 +176,45 @@ describe("CategoryTally — presentation", () => {
   });
 });
 
+describe("CategoryTally — initial loading", () => {
+  it("never shows zero counts while the initial fetch is still loading", () => {
+    const { container } = render(
+      <CategoryTally
+        incidents={[]}
+        activeFilter="ALL"
+        onSelectFilter={() => {}}
+        agency="ALL"
+        loading
+      />,
+    );
+
+    const buttons = [...container.querySelectorAll("button")];
+    for (const button of buttons) {
+      const countCell = button.querySelectorAll("div")[1];
+      expect(countCell.textContent).toBe("");
+      expect(countCell.querySelector(".animate-pulse")).toBeTruthy();
+    }
+    expect(screen.queryByText("00")).toBeNull();
+  });
+
+  it("marks the grid busy while loading and renders real counts afterwards", () => {
+    const view = render(
+      <CategoryTally
+        incidents={[]}
+        activeFilter="ALL"
+        onSelectFilter={() => {}}
+        agency="ALL"
+        loading
+      />,
+    );
+    expect(view.container.querySelector("section").getAttribute("aria-busy")).toBe("true");
+    view.unmount();
+
+    renderTally({ incidents: [], agency: "ALL" });
+    expect(screen.getAllByText("00").length).toBe(CATEGORY_KEYS.length);
+  });
+});
+
 describe("ControlRoom wiring", () => {
   it("passes the dispatcher's agency down so the tally restricts the cards", () => {
     const { container } = render(
@@ -233,5 +272,51 @@ describe("ControlRoom wiring", () => {
     expect(
       screen.getByRole("button", { name: "Resolved" }).getAttribute("aria-pressed"),
     ).toBe("false");
+  });
+
+  it("shows an alert with a working Retry when the incident feed failed to load", () => {
+    const onRetry = vi.fn();
+    render(
+      <ControlRoom
+        incidents={[]}
+        onSelectIncident={() => {}}
+        initialAgency="ALL"
+        loading={false}
+        error={new Error("network down")}
+        onRetry={onRetry}
+      />,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toMatch(/unavailable/i);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows no alert while the first fetch is still loading", () => {
+    render(
+      <ControlRoom
+        incidents={[]}
+        onSelectIncident={() => {}}
+        initialAgency="ALL"
+        loading
+        error={new Error("network down")}
+        onRetry={() => {}}
+      />,
+    );
+
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("stays quiet when the feed loaded fine", () => {
+    render(
+      <ControlRoom
+        incidents={[]}
+        onSelectIncident={() => {}}
+        initialAgency="ALL"
+      />,
+    );
+
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

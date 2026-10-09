@@ -11,6 +11,8 @@ const { state } = vi.hoisted(() => ({
     refs: {
       containerRef: { current: null },
       mapRef: { current: { id: "fake-map" } },
+      loaded: true,
+      loadFailed: false,
     },
   },
 }));
@@ -123,6 +125,7 @@ function renderMap(props = {}) {
       onSelectIncident={props.onSelectIncident ?? (() => {})}
       activeFilter={props.activeFilter ?? "ALL"}
       newIncidentIds={props.newIncidentIds ?? []}
+      incidentsLoading={props.incidentsLoading ?? false}
     />,
   );
   return {
@@ -134,15 +137,59 @@ function renderMap(props = {}) {
           onSelectIncident={next.onSelectIncident ?? (() => {})}
           activeFilter={next.activeFilter ?? "ALL"}
           newIncidentIds={next.newIncidentIds ?? []}
+          incidentsLoading={next.incidentsLoading ?? false}
         />,
       );
     },
   };
 }
 
+describe("IncidentMap — loading overlay", () => {
+  beforeEach(() => {
+    state.markers.length = 0;
+    state.refs.loaded = true;
+    state.refs.loadFailed = false;
+  });
+
+  it("covers the map with a status overlay until the style has loaded", () => {
+    state.refs.loaded = false;
+
+    const { getByRole } = renderMap();
+
+    const status = getByRole("status");
+    expect(status.getAttribute("aria-label")).toMatch(/map/i);
+    expect(status.querySelector(".animate-pulse")).toBeTruthy();
+  });
+
+  it("keeps the overlay up while the first incident fetch is loading", () => {
+    const { getByRole } = renderMap({ incidentsLoading: true });
+
+    expect(getByRole("status")).toBeTruthy();
+  });
+
+  it("stays clear once the map is loaded and data has arrived", () => {
+    const { queryByRole } = renderMap();
+
+    expect(queryByRole("status")).toBeNull();
+  });
+
+  it("lifts the overlay as soon as the first fetch finishes", () => {
+    const { rerenderWith, queryByRole } = renderMap({
+      incidentsLoading: true,
+    });
+    expect(queryByRole("status")).toBeTruthy();
+
+    rerenderWith({ incidentsLoading: false });
+
+    expect(queryByRole("status")).toBeNull();
+  });
+});
+
 describe("IncidentMap — new-incident marker pulse", () => {
   beforeEach(() => {
     state.markers.length = 0;
+    state.refs.loaded = true;
+    state.refs.loadFailed = false;
   });
 
   it("leaves existing markers untouched when there are no new incident IDs", () => {
@@ -298,5 +345,41 @@ describe("IncidentMap — new-incident marker pulse", () => {
     expect(keyframes).toBeTruthy();
     expect(keyframes).toContain(`var(${PULSE_COLOR_VAR}`);
     expect(keyframes).not.toContain("#10b981");
+  });
+});
+
+describe("IncidentMap — map load failure", () => {
+  beforeEach(() => {
+    state.markers.length = 0;
+    state.refs.loaded = false;
+    state.refs.loadFailed = false;
+  });
+
+  it("replaces the eternal loading overlay with an accessible unavailable state", () => {
+    state.refs.loadFailed = true;
+
+    const { getByRole, queryByLabelText } = renderMap();
+
+    const alert = getByRole("alert");
+    expect(alert.textContent).toMatch(/map unavailable/i);
+    expect(queryByLabelText(/loading map/i)).toBeNull();
+  });
+
+  it("shows neither state once a late style load succeeds", () => {
+    state.refs.loadFailed = true;
+    state.refs.loaded = true;
+
+    const { queryByRole, queryByLabelText } = renderMap();
+
+    expect(queryByRole("alert")).toBeNull();
+    expect(queryByLabelText(/loading map/i)).toBeNull();
+  });
+
+  it("keeps drawing incident markers even when the basemap failed", () => {
+    state.refs.loadFailed = true;
+
+    renderMap();
+
+    expect(liveMarkerEls().length).toBe(3);
   });
 });

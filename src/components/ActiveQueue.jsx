@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { CATEGORIES, CATEGORY_KEYS } from "../lib/config";
+import Skeleton from "./Skeleton";
 
 const FILTERS = ["ALL", ...CATEGORY_KEYS];
 
@@ -9,12 +10,37 @@ const STATUS_STYLES = {
   "EN ROUTE": "text-risk-mid border-risk-mid/40",
 };
 
+// Skeleton rows mirroring a queue card's shape (id/time line, location,
+// status line) so the list doesn't jump when the first fetch lands.
+function QueueSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading incidents"
+      className="space-y-2"
+    >
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="rounded-md border border-border bg-panel p-3">
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-10" />
+          </div>
+          <Skeleton className="mt-2 h-4 w-3/4" />
+          <Skeleton className="mt-2 h-4 w-1/3" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ActiveQueue({
   incidents,
   onSelectIncident,
   activeFilter,
   onFilterChange,
   newIncidentIds = [],
+  loading = false,
+  error = null,
 }) {
   const pending = useMemo(
     () => incidents.filter((i) => i.status !== "RESOLVED"),
@@ -35,7 +61,7 @@ export default function ActiveQueue({
       <div className="flex items-center justify-between px-1">
         <h2 className="text-sm font-semibold">Active Queue</h2>
         <span className="rounded-full border border-border bg-panel px-2 py-0.5 text-xs text-ink-dim">
-          {pending.length} Pending
+          {loading ? "—" : pending.length} Pending
         </span>
       </div>
 
@@ -57,13 +83,22 @@ export default function ActiveQueue({
       </div>
 
       <div className="mt-3 flex-1 space-y-2 overflow-y-auto px-1 pb-2">
-        {filtered.length === 0 && (
+        {loading && <QueueSkeleton />}
+        {/* Only a genuinely completed, successful load may claim emptiness;
+            a failed first fetch is an error state, not an empty queue. */}
+        {!loading && filtered.length === 0 && error && (
+          <div className="mt-6 rounded-md border border-dashed border-fire/40 bg-fire/10 px-3 py-6 text-center text-sm text-fire">
+            Couldn't load incidents. The live feed is unavailable.
+          </div>
+        )}
+        {!loading && filtered.length === 0 && !error && (
           <div className="mt-6 rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-ink-dim">
             No {activeFilter === "ALL" ? "" : activeFilter.toLowerCase()}{" "}
             incidents in queue.
           </div>
         )}
-        {filtered.map((incident) => {
+        {!loading &&
+          filtered.map((incident) => {
           const isNew = newIncidentIds.includes(incident.id);
           return (
             <button

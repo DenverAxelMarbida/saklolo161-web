@@ -46,6 +46,9 @@ try {
 /** @type {Set<(auth: { token: string, user: { uid: string, email: string|undefined, agency: string, role: string } } | null) => void>} */
 const listeners = new Set();
 
+/** One-shot callbacks waiting for Firebase's initial session restore to resolve. */
+const restoreListeners = new Set(); // { callback, onError }
+
 /** Synchronous cache consumed by getStoredAuth() and refreshed by the Firebase listener. */
 let authCache = null;
 
@@ -88,6 +91,13 @@ function notifyListeners(auth) {
   for (const cb of listeners) {
     cb(auth);
   }
+}
+
+function notifyRestoreListeners() {
+  for (const entry of restoreListeners) {
+    entry.callback();
+  }
+  restoreListeners.clear();
 }
 
 function clearLegacyStorage() {
@@ -242,25 +252,36 @@ function ensureFirebaseSubscription() {
 
   unsubscribeFirebase = onIdTokenChanged(getFirebaseAuth(), async (firebaseUser) => {
     // First emission = Firebase's initial session restore has resolved.
+    const firstEmission = !initialEmissionReceived;
     initialEmissionReceived = true;
-    if (!firebaseUser) {
-      // Genuine signed-out state: drop the snapshot so no persisted token
-      // can outlive Firebase's authority, then push null to subscribers.
-      clearSnapshot();
-      updateAuthCache(null);
-      return;
-    }
     try {
-      const tokenResult = await firebaseUser.getIdTokenResult();
-      const user = await buildUser(firebaseUser, tokenResult.claims);
-      updateAuthCache(
-        { token: tokenResult.token, user },
-        expFromTokenResult(tokenResult),
-      );
-    } catch {
-      // Missing claims or token fetch failure: never emit an invalid
-      // authenticated user — treat the session as signed out.
-      updateAuthCache(null);
+      if (!firebaseUser) {
+        // Genuine signed-out state: drop the snapshot so no persisted token
+        // can outlive Firebase's authority, then push null to subscribers.
+        clearSnapshot();
+        updateAuthCache(null);
+        return;
+      }
+      try {
+        const tokenResult = await firebaseUser.getIdTokenResult();
+        const user = await buildUser(firebaseUser, tokenResult.claims);
+        updateAuthCache(
+          { token: tokenResult.token, user },
+          expFromTokenResult(tokenResult),
+        );
+      } catch {
+        // Missing claims or token fetch failure: never emit an invalid
+        // authenticated user — treat the session as signed out.
+        updateAuthCache(null);
+      }
+    } finally {
+      // Fire ONLY after the auth decision above has been processed and
+      // pushed to onAuthChange subscribers. Lifting App's restore gate
+      // any earlier (as the pre-review code did) rendered Login for a
+      // signed-in user in the window between the gate lifting and the
+      // async token/claims resolution landing. The finally also
+      // guarantees a restoration error can never leave the gate stuck.
+      if (firstEmission) notifyRestoreListeners();
     }
   });
 }
@@ -367,5 +388,39 @@ export function onAuthChange(callback) {
 
   return () => {
     listeners.delete(callback);
+  };
+}
+
+/**
+ * Subscribes to the one-shot "initial session restore completed" signal
+ * (additive — onAuthChange's frozen contract is untouched). Invokes
+ * `callback` immediately if Firebase's first emission already arrived,
+ * otherwise exactly once when it does (signed-in or signed-out alike) —
+ * and always AFTER that emission's auth decision has been processed, so
+ * a signed-in restore can't race App past its own gate. If Firebase
+ * initialization/subscription throws, `onError` is invoked instead of
+ * propagating so the caller can surface a recoverable state; the
+ * callback stays registered for a late emission if one ever arrives.
+ * Returns an unsubscribe function.
+ *
+ * App.jsx uses this to tell "still restoring" apart from "restored to
+ * signed-out", so the login screen no longer flashes while Firebase
+ * replays a persisted session.
+ */
+export function onAuthRestore(callback, onError = () => {}) {
+  if (initialEmissionReceived) {
+    callback();
+    return () => {};
+  }
+  const entry = { callback, onError };
+  restoreListeners.add(entry);
+  try {
+    ensureFirebaseSubscription();
+  } catch (error) {
+    onError(error);
+  }
+
+  return () => {
+    restoreListeners.delete(entry);
   };
 }

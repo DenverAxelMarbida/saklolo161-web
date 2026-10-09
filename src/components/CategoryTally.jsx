@@ -1,4 +1,5 @@
 import { CATEGORIES, CATEGORY_KEYS } from "../lib/config";
+import Skeleton from "./Skeleton";
 
 // Agency → visible category cards. There is no separate mapping table:
 // agencies and categories share the same canonical keys (see
@@ -24,6 +25,7 @@ export default function CategoryTally({
   activeFilter,
   onSelectFilter,
   agency,
+  loading = false,
 }) {
   const visibleKeys = resolveVisibleKeys(agency);
 
@@ -33,7 +35,7 @@ export default function CategoryTally({
   }, {});
 
   return (
-    <section aria-label="Incident categories">
+    <section aria-label="Incident categories" aria-busy={loading}>
       <div className="mb-2 flex items-center justify-between px-1">
         <h2 className="text-sm font-semibold">Incident Categories</h2>
       </div>
@@ -60,8 +62,15 @@ export default function CategoryTally({
               <div className="text-[11px] uppercase tracking-wide">
                 {CATEGORIES[key].label}
               </div>
+              {/* A zero count during the first fetch would read as "no
+                  incidents" — show a pulsing placeholder until the real
+                  number lands. */}
               <div className="font-mono text-2xl font-semibold">
-                {String(counts[key]).padStart(2, "0")}
+                {loading ? (
+                  <Skeleton className="h-7 w-10" />
+                ) : (
+                  String(counts[key]).padStart(2, "0")
+                )}
               </div>
             </button>
           );

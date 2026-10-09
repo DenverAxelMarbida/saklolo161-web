@@ -31,8 +31,14 @@ function tooltipHTML(incident) {
   `;
 }
 
-export default function IncidentMap({ incidents, onSelectIncident, activeFilter, newIncidentIds = [] }) {
-  const { containerRef, mapRef } = useMapboxMap({ zoom: 12.5 });
+export default function IncidentMap({
+  incidents,
+  onSelectIncident,
+  activeFilter,
+  newIncidentIds = [],
+  incidentsLoading = false,
+}) {
+  const { containerRef, mapRef, loaded, loadFailed } = useMapboxMap({ zoom: 12.5 });
 
   // Markers are plain mapboxgl.Marker objects, not React elements — they
   // live outside React's render tree, so we track them ourselves in a
@@ -107,5 +113,37 @@ export default function IncidentMap({ incidents, onSelectIncident, activeFilter,
     // takes its markers with it).
   }, [incidents, mapRef, onSelectIncident, activeFilter, newIncidentIds]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="h-full w-full" />
+      {/* Honest "is there anything to look at yet?" gate: the blank grey
+          canvas before Mapbox's style loads, and the first fetch, both
+          get an explicit indicator instead of reading as an empty map.
+          A pre-load failure is terminal for the canvas — swap the
+          endless "Loading map…" pulse for an explicit, announced
+          unavailable state (the queue/list still serves the data). */}
+      {loadFailed && !loaded ? (
+        <div
+          role="alert"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 bg-bg/70 px-4 text-center"
+        >
+          <span className="text-xs font-semibold text-white">Map unavailable</span>
+          <span className="text-xs text-ink-dim">
+            The basemap failed to load. Incident details stay available in the queue.
+          </span>
+        </div>
+      ) : (
+        (!loaded || incidentsLoading) && (
+          <div
+            role="status"
+            aria-label="Loading map"
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-bg/70"
+          >
+            <span className="h-4 w-24 animate-pulse rounded bg-white/10" />
+            <span className="text-xs text-ink-dim">Loading map…</span>
+          </div>
+        )
+      )}
+    </div>
+  );
 }
