@@ -412,3 +412,76 @@ describe("View transition — CSS contract", () => {
     expect(reducedMotion).toContain("animation: none");
   });
 });
+
+describe("Settings — Policies tab", () => {
+  it("dispatcher sees a Policies tab but no User Management option", () => {
+    const onNavigate = vi.fn();
+    render(<Settings user={dispatcherUser} onNavigate={onNavigate} />);
+
+    expect(
+      screen.getByRole("tab", { name: "Policies" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "My Account" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "User Management" })).toBeNull();
+    expect(screen.queryByText("User Management")).toBeNull();
+  });
+
+  it("admin sees Policies alongside My Account and User Management", () => {
+    const onNavigate = vi.fn();
+    render(<Settings user={adminUser} onNavigate={onNavigate} />);
+
+    expect(screen.getByRole("tab", { name: "My Account" })).toBeTruthy();
+    expect(
+      screen.getByRole("tab", { name: "User Management" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Policies" })).toBeTruthy();
+  });
+
+  it("Policies panel shows AUP, privacy/security, and RBAC with a draft notice", () => {
+    const onNavigate = vi.fn();
+    render(<Settings user={dispatcherUser} onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Policies" }));
+
+    expect(screen.getByTestId("policies-draft-notice")).toBeTruthy();
+    expect(screen.getByTestId("policies-aup-heading")).toBeTruthy();
+    expect(screen.getByTestId("policies-privacy-heading")).toBeTruthy();
+    expect(screen.getByTestId("policies-rbac-heading")).toBeTruthy();
+    // Pending-agency items are explicit, not silently omitted.
+    expect(screen.getByTestId("policies-retention-pending")).toBeTruthy();
+  });
+
+  it("Policies panel describes the two enforced roles without inventing more", () => {
+    const onNavigate = vi.fn();
+    const { container } = render(
+      <Settings user={adminUser} onNavigate={onNavigate} />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Policies" }));
+
+    const panel = within(container).getByTestId("policies-rbac-heading")
+      .parentElement;
+    expect(panel.textContent).toMatch(/admin/);
+    expect(panel.textContent).toMatch(/dispatcher/);
+    // Backend enforcement is named as the real boundary.
+    expect(panel.textContent).toMatch(/backend/i);
+  });
+
+  it("opening Policies never mounts User Management for a dispatcher", () => {
+    const onNavigate = vi.fn();
+    const { container } = render(
+      <Settings user={dispatcherUser} onNavigate={onNavigate} />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Policies" }));
+
+    expect(within(container).queryByText("User Management")).toBeNull();
+    expect(listUsers).not.toHaveBeenCalled();
+  });
+
+  it("Back to Control Room still works from the Policies tab", () => {
+    const onNavigate = vi.fn();
+    render(<Settings user={dispatcherUser} onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Policies" }));
+    fireEvent.click(screen.getByText("Back to Control Room"));
+
+    expect(onNavigate).toHaveBeenCalledWith("control");
+  });
+});
