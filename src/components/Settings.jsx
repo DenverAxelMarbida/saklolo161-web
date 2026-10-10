@@ -29,8 +29,9 @@ export default function Settings({ user, onNavigate, initialSection }) {
   );
 
   // Tabs every role sees; admins additionally get User Management
-  // and Stations & Units. The Policies tab is informational — readable by dispatchers and
-  // admins alike, since it describes rules rather than granting access.
+  // and Stations & Units. The Policies tab is informational — readable
+  // by dispatchers and admins alike, since it describes rules rather
+  // than granting access.
   const tabs = isAdmin
     ? [
         { id: "account", label: "My Account" },
