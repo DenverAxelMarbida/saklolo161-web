@@ -1,17 +1,20 @@
 import { useState } from "react";
 import ChangePasswordModal from "./ChangePasswordModal";
 import UserManagement from "./UserManagement";
+import Policies from "./Policies";
 
 // Dedicated Settings section — reached via the Header gear button
 // (App.jsx view state: "control" | "users" | "settings", no router).
 //
-// One section, tabbed: "My Account" for BOTH roles reuses the existing
-// ChangePasswordModal (no second password-change system); admins also
-// get a "User Management" tab that renders the EXISTING UserManagement
-// component inline — no redirect to a separate top-level view. UI
-// gating only; the backend's verifyAuth + requireAdmin on /api/users
-// remains the real security boundary. initialSection="users" is App's
-// compatibility entry for the legacy "users" view.
+// Tabbed for every role: "My Account" (all roles, reuses the existing
+// ChangePasswordModal — no second password-change system), "User
+// Management" (admins only, renders the EXISTING UserManagement
+// component inline — no redirect to a separate top-level view), and
+// "Policies" (all roles: Acceptable Use, Data Privacy & Security,
+// RBAC information). UI gating only; the backend's verifyAuth +
+// requireAdmin on /api/users remains the real security boundary.
+// initialSection="users" is App's compatibility entry for the legacy
+// "users" view.
 export default function Settings({ user, onNavigate, initialSection }) {
   const [showChangePassword, setShowChangePassword] = useState(false);
 
@@ -23,17 +26,25 @@ export default function Settings({ user, onNavigate, initialSection }) {
     isAdmin && initialSection === "users" ? "users" : "account",
   );
 
-  // Dispatcher: no tabs at all — the My Account content stands alone
-  // exactly as before, with no tabpanel roles pointing at tabs that
-  // don't exist.
-  const panelProps = (id) =>
-    isAdmin
-      ? {
-          role: "tabpanel",
-          id: `settings-panel-${id}`,
-          "aria-labelledby": `settings-tab-${id}`,
-        }
-      : {};
+  // Tabs every role sees; admins additionally get User Management.
+  // The Policies tab is informational — readable by dispatchers and
+  // admins alike, since it describes rules rather than granting access.
+  const tabs = isAdmin
+    ? [
+        { id: "account", label: "My Account" },
+        { id: "users", label: "User Management" },
+        { id: "policies", label: "Policies" },
+      ]
+    : [
+        { id: "account", label: "My Account" },
+        { id: "policies", label: "Policies" },
+      ];
+
+  const panelProps = (id) => ({
+    role: "tabpanel",
+    id: `settings-panel-${id}`,
+    "aria-labelledby": `settings-tab-${id}`,
+  });
 
   const tabClass = (active) =>
     `-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${
@@ -60,39 +71,29 @@ export default function Settings({ user, onNavigate, initialSection }) {
           </button>
         </div>
 
-        {/* Admin only — dispatchers never render this tab bar */}
-        {isAdmin && (
-          <div
-            role="tablist"
-            aria-label="Settings sections"
-            className="mt-5 flex gap-1 border-b border-border"
-          >
+        {/* Tabs for every role — User Management only renders for admins */}
+        <div
+          role="tablist"
+          aria-label="Settings sections"
+          className="mt-5 flex gap-1 border-b border-border"
+        >
+          {tabs.map((tab) => (
             <button
+              key={tab.id}
               type="button"
               role="tab"
-              id="settings-tab-account"
-              aria-selected={section === "account"}
-              aria-controls="settings-panel-account"
-              onClick={() => setSection("account")}
-              className={tabClass(section === "account")}
+              id={`settings-tab-${tab.id}`}
+              aria-selected={section === tab.id}
+              aria-controls={`settings-panel-${tab.id}`}
+              onClick={() => setSection(tab.id)}
+              className={tabClass(section === tab.id)}
             >
-              My Account
+              {tab.label}
             </button>
-            <button
-              type="button"
-              role="tab"
-              id="settings-tab-users"
-              aria-selected={section === "users"}
-              aria-controls="settings-panel-users"
-              onClick={() => setSection("users")}
-              className={tabClass(section === "users")}
-            >
-              User Management
-            </button>
-          </div>
-        )}
+          ))}
+        </div>
 
-        {section === "account" ? (
+        {section === "account" && (
           /* My Account — every signed-in role */
           <section
             {...panelProps("account")}
@@ -130,10 +131,17 @@ export default function Settings({ user, onNavigate, initialSection }) {
               </button>
             </div>
           </section>
-        ) : (
+        )}
+        {section === "users" && isAdmin && (
           /* Admin only — the EXISTING UserManagement component, inline */
           <div {...panelProps("users")} className="mt-6">
             <UserManagement embedded />
+          </div>
+        )}
+        {section === "policies" && (
+          /* Every role — policy information, no privileged actions */
+          <div {...panelProps("policies")}>
+            <Policies />
           </div>
         )}
       </div>
