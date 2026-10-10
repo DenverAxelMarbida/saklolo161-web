@@ -33,6 +33,18 @@ export default function RouteMap({ stationCoords, incidentCoords, geometry }) {
   const stationLng = stationCoords?.lng;
   const incidentLat = incidentCoords?.lat;
   const incidentLng = incidentCoords?.lng;
+  const coordsPresent =
+    stationLat != null &&
+    stationLng != null &&
+    incidentLat != null &&
+    incidentLng != null;
+
+  // True only while a fetch is actually pending: no geometry was passed
+  // in, we haven't failed, and we haven't got a result yet. Once the
+  // fetch fails or resolves (even with null geometry) the straight-line
+  // fallback draws instead and the chip steps aside.
+  const routePending =
+    coordsPresent && !geometry && !geometryFailed && fetchedGeometry === null;
 
   useEffect(() => {
     if (geometry) return;
@@ -144,5 +156,18 @@ export default function RouteMap({ stationCoords, incidentCoords, geometry }) {
     mapRef,
   ]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="h-full w-full" />
+      {routePending && (
+        <div
+          role="status"
+          className="absolute bottom-2 left-2 z-10 flex items-center gap-2 rounded-md border border-border bg-panel/90 px-2.5 py-1.5 text-xs text-ink-dim"
+        >
+          <span className="h-3 w-3 animate-pulse rounded-full border-2 border-ink-dim border-t-transparent" />
+          Calculating route…
+        </div>
+      )}
+    </div>
+  );
 }

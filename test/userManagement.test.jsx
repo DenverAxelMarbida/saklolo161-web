@@ -225,6 +225,109 @@ describe("UserManagement", () => {
   });
 });
 
+describe("UserManagement — loading skeleton and pending toggles", () => {
+  it("shows a skeleton region instead of a bare 'Loading users…' placeholder", async () => {
+    listUsers.mockImplementation(() => new Promise(() => {}));
+
+    render(<UserManagement />);
+
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("aria-label")).toMatch(/loading users/i);
+    expect(status.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/loading users/i)).toBeNull();
+    expect(screen.queryByText("No users found.")).toBeNull();
+  });
+
+  it("keeps the rows on screen during a background refetch (no skeleton flash)", async () => {
+    listUsers
+      .mockResolvedValueOnce([disabledUser])
+      .mockImplementation(() => new Promise(() => {}));
+    setUserEnabled.mockResolvedValue({ success: true });
+
+    render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Enable"));
+
+    // listUsers' second call hangs — this is the refetch window.
+    await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("fire@marikina.gov.ph")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("disables the Enable button while its request is in flight", async () => {
+    listUsers.mockResolvedValue([disabledUser]);
+    setUserEnabled.mockImplementation(() => new Promise(() => {}));
+
+    render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Enable"));
+
+    expect(screen.getByText("Enable").disabled).toBe(true);
+    expect(setUserEnabled).toHaveBeenCalledTimes(1);
+
+    // A second click while pending must not fire another request.
+    fireEvent.click(screen.getByText("Enable"));
+    expect(setUserEnabled).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Confirm disable while its request is in flight", async () => {
+    listUsers.mockResolvedValue([enabledUser]);
+    setUserEnabled.mockImplementation(() => new Promise(() => {}));
+
+    render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Disable"));
+    fireEvent.click(screen.getByText("Confirm disable"));
+
+    expect(screen.getByText("Confirm disable").disabled).toBe(true);
+    expect(setUserEnabled).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("UserManagement — load error recovery", () => {
+  it("announces a load failure to screen readers and Retry reloads the list", async () => {
+    listUsers.mockRejectedValueOnce(new Error("network down"));
+    listUsers.mockResolvedValueOnce([enabledUser]);
+
+    render(<UserManagement />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/couldn't load users/i);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("admin@marikina.gov.ph")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(listUsers).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears the error while the retry runs, so it cannot fire twice", async () => {
+    listUsers.mockRejectedValueOnce(new Error("network down"));
+
+    render(<UserManagement />);
+    await screen.findByRole("alert");
+
+    listUsers.mockImplementation(() => new Promise(() => {}));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    // Exactly one reload: the error block (and its button) is gone for
+    // the duration of the in-flight load.
+    expect(listUsers).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("keeps existing rows visible when a refetch after a toggle fails", async () => {
+    listUsers.mockResolvedValueOnce([disabledUser]);
+    listUsers.mockRejectedValueOnce(new Error("network down"));
+    setUserEnabled.mockResolvedValue({ success: true });
+
+    render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Enable"));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/couldn't load users/i);
+    expect(screen.getByText("fire@marikina.gov.ph")).toBeTruthy();
+  });
+});
+
 describe("Header admin navigation", () => {
   it("2. no longer offers a direct User Management entry — Settings does", () => {
     const onNavigate = vi.fn();
@@ -237,8 +340,8 @@ describe("Header admin navigation", () => {
       />,
     );
 
-    // The header entry point was removed; Settings -> Open User Management
-    // is the way in (covered end-to-end in settings.test.jsx).
+    // The header entry point was removed; Settings hosts User Management
+    // as an integrated section (covered end-to-end in settings.test.jsx).
     expect(screen.queryByText("User Management")).toBeNull();
     fireEvent.click(screen.getByLabelText("Settings"));
     expect(onNavigate).toHaveBeenCalledWith("settings");

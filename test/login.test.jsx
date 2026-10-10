@@ -1,12 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import Login from "../src/components/Login";
 import App from "../src/App";
 
 // ---- Module mocks (hoisted above imports by vitest) ------------------------
 
-const { authState } = vi.hoisted(() => ({
+const { authState, restoreState } = vi.hoisted(() => ({
   authState: { payload: null, callback: null },
+  restoreState: {
+    auto: true,
+    listeners: [],
+    fire() {
+      const pending = [...this.listeners];
+      this.listeners = [];
+      for (const cb of pending) cb();
+    },
+    reset() {
+      this.auto = true;
+      this.listeners = [];
+    },
+  },
 }));
 
 vi.mock("../src/lib/auth", () => ({
@@ -18,6 +31,20 @@ vi.mock("../src/lib/auth", () => ({
     authState.callback = callback;
     callback(authState.payload);
     return () => {};
+  },
+  // Mirrors onAuthRestore: resolves immediately by default; tests can set
+  // restoreState.auto = false to hold the app in its restoring gate.
+  onAuthRestore: (callback) => {
+    if (restoreState.auto) {
+      callback();
+      return () => {};
+    }
+    restoreState.listeners.push(callback);
+    return () => {
+      restoreState.listeners = restoreState.listeners.filter(
+        (cb) => cb !== callback,
+      );
+    };
   },
   getStoredAuth: () => authState.payload,
 }));
@@ -59,6 +86,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   authState.payload = null;
   authState.callback = null;
+  restoreState.reset();
 });
 
 describe("Login screen", () => {
@@ -199,6 +227,10 @@ describe("Login — password visibility toggle", () => {
 });
 
 describe("App — auth screen transitions", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("shows Login until auth resolves, then the control room", () => {
     render(<App />);
 
@@ -239,5 +271,87 @@ describe("App — auth screen transitions", () => {
 
     fireEvent.click(screen.getByText("Log Out"));
     expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds a 'Restoring session…' gate instead of flashing Login before the restore resolves", () => {
+    restoreState.auto = false;
+    render(<App />);
+
+    expect(screen.getByText(/restoring session/i)).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Dispatcher Login" })).toBeNull();
+    expect(screen.queryByTestId("control-room")).toBeNull();
+
+    act(() => {
+      restoreState.fire();
+    });
+
+    expect(screen.queryByText(/restoring session/i)).toBeNull();
+    expect(screen.getByRole("heading", { name: "Dispatcher Login" })).toBeTruthy();
+  });
+
+  it("skips the restoring gate when an authenticated session is already cached", () => {
+    restoreState.auto = false;
+    authState.payload = { token: "test-token", user: dispatcherUser };
+    render(<App />);
+
+    expect(screen.queryByText(/restoring session/i)).toBeNull();
+    expect(screen.getByTestId("control-room")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Dispatcher Login" })).toBeNull();
+  });
+
+  it("falls back to a recoverable Retry state when restoration never resolves", () => {
+    vi.useFakeTimers();
+    restoreState.auto = false;
+    render(<App />);
+
+    expect(screen.getByText(/restoring session/i)).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(screen.queryByText(/restoring session/i)).toBeNull();
+    expect(screen.getByText(/couldn't restore your session/i)).toBeTruthy();
+    // Never authenticated, never shown Login by the fallback either —
+    // just an explicit, retryable failure.
+    expect(screen.queryByTestId("control-room")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Dispatcher Login" })).toBeNull();
+  });
+
+  it("a late restore event after the timeout still recovers without a Retry click", () => {
+    vi.useFakeTimers();
+    restoreState.auto = false;
+    render(<App />);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(screen.getByText(/couldn't restore your session/i)).toBeTruthy();
+
+    act(() => {
+      restoreState.fire();
+    });
+
+    expect(screen.queryByText(/couldn't restore your session/i)).toBeNull();
+    expect(screen.queryByText(/restoring session/i)).toBeNull();
+    expect(screen.getByRole("heading", { name: "Dispatcher Login" })).toBeTruthy();
+  });
+
+  it("Retry re-arms the restore attempt and resolves normally", () => {
+    vi.useFakeTimers();
+    restoreState.auto = false;
+    render(<App />);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(screen.getByText(/couldn't restore your session/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Retry"));
+    expect(screen.getByText(/restoring session/i)).toBeTruthy();
+    expect(screen.queryByText(/couldn't restore your session/i)).toBeNull();
+
+    act(() => {
+      restoreState.fire();
+    });
+    expect(screen.getByRole("heading", { name: "Dispatcher Login" })).toBeTruthy();
   });
 });

@@ -143,6 +143,60 @@ describe("ActiveQueue — empty state", () => {
     expect(screen.getByText("No flood incidents in queue.")).toBeTruthy();
   });
 });
+describe("ActiveQueue — loading and error states", () => {
+  it("shows skeleton rows instead of the empty message while the first fetch is loading", () => {
+    render(
+      <ActiveQueue
+        incidents={[]}
+        onSelectIncident={() => {}}
+        activeFilter="ALL"
+        onFilterChange={() => {}}
+        loading
+      />,
+    );
+
+    expect(screen.queryByText("No incidents in queue.")).toBeNull();
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("aria-label")).toBe("Loading incidents");
+    expect(status.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+  });
+
+  it("does not show a misleading pending count while loading", () => {
+    render(
+      <ActiveQueue
+        incidents={[]}
+        onSelectIncident={() => {}}
+        activeFilter="ALL"
+        onFilterChange={() => {}}
+        loading
+      />,
+    );
+
+    expect(screen.queryByText("0 Pending")).toBeNull();
+    expect(screen.getByText("— Pending")).toBeTruthy();
+  });
+
+  it("shows an error message instead of the empty state when the load failed", () => {
+    render(
+      <ActiveQueue
+        incidents={[]}
+        onSelectIncident={() => {}}
+        activeFilter="ALL"
+        onFilterChange={() => {}}
+        error={new Error("network down")}
+      />,
+    );
+
+    expect(screen.queryByText("No incidents in queue.")).toBeNull();
+    expect(screen.getByText(/couldn't load incidents/i)).toBeTruthy();
+  });
+
+  it("keeps the genuine empty message once loading finishes without error", () => {
+    renderQueue([]);
+    expect(screen.getByText("No incidents in queue.")).toBeTruthy();
+  });
+});
+
 describe("ActiveQueue — filter chips", () => {
   it("marks the selected chip with aria-pressed", () => {
     renderQueue([makeIncident()]);

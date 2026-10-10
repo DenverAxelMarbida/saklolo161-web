@@ -116,6 +116,43 @@ describe("WeatherCard", () => {
   });
 });
 
+describe("WeatherCard — background refresh", () => {
+  it("keeps the reading up and shows a Refreshing… cue while refetching", () => {
+    render(
+      <WeatherCard
+        loading
+        weather={weather}
+        updatedAt="2026-10-06T14:32:00.000Z"
+      />,
+    );
+
+    expect(screen.getByText("30°C")).toBeTruthy();
+    expect(screen.getByText("Refreshing…")).toBeTruthy();
+    expect(screen.queryByText(/^Updated /)).toBeNull();
+  });
+
+  it("returns to the Updated timestamp once the refresh settles", () => {
+    const { rerender } = render(
+      <WeatherCard
+        loading
+        weather={weather}
+        updatedAt="2026-10-06T14:32:00.000Z"
+      />,
+    );
+
+    rerender(
+      <WeatherCard
+        loading={false}
+        weather={weather}
+        updatedAt="2026-10-06T14:32:00.000Z"
+      />,
+    );
+
+    expect(screen.queryByText("Refreshing…")).toBeNull();
+    expect(screen.getByText(/^Updated /)).toBeTruthy();
+  });
+});
+
 describe("WeatherCard dynamic condition graphics", () => {
   const graphic = (container, key) =>
     container.querySelector(`svg[data-condition="${key}"]`);
@@ -289,5 +326,43 @@ describe("RiverLevelCard", () => {
   it("stays aria-busy while loading", () => {
     const { container } = render(<RiverLevelCard loading river={null} />);
     expect(container.firstElementChild.getAttribute("aria-busy")).toBe("true");
+  });
+});
+
+describe("RiverLevelCard — background refresh", () => {
+  it("keeps the level up and shows a Refreshing… cue while refetching", () => {
+    render(
+      <RiverLevelCard
+        loading
+        river={{ levelM: 15.2, status: "Normal", source: "pagasa" }}
+        updatedAt="2026-10-06T14:32:00.000Z"
+      />,
+    );
+
+    expect(screen.getByText("15.2m")).toBeTruthy();
+    expect(screen.getByText("Refreshing…")).toBeTruthy();
+    expect(screen.getByText("PAGASA feed")).toBeTruthy();
+    expect(screen.queryByText(/^Updated /)).toBeNull();
+  });
+
+  it("returns to the Updated timestamp once the refresh settles", () => {
+    const { rerender } = render(
+      <RiverLevelCard
+        loading
+        river={{ levelM: 15.2, status: "Normal" }}
+        updatedAt="2026-10-06T14:32:00.000Z"
+      />,
+    );
+
+    rerender(
+      <RiverLevelCard
+        loading={false}
+        river={{ levelM: 15.2, status: "Normal" }}
+        updatedAt="2026-10-06T14:32:00.000Z"
+      />,
+    );
+
+    expect(screen.queryByText("Refreshing…")).toBeNull();
+    expect(screen.getByText(/^Updated /)).toBeTruthy();
   });
 });

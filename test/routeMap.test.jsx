@@ -149,4 +149,48 @@ describe("RouteMap", () => {
     expect(container.querySelector(".h-full.w-full")).toBeTruthy();
     expect(mockMap.addSource).not.toHaveBeenCalled();
   });
+
+  it("shows a calculating-route chip while the route fetch is in flight", () => {
+    fetchRoute.mockImplementation(() => new Promise(() => {}));
+
+    const { getByRole } = render(
+      <RouteMap stationCoords={STATION} incidentCoords={INCIDENT} />,
+    );
+
+    const status = getByRole("status");
+    expect(status.textContent).toMatch(/calculating route/i);
+  });
+
+  it("hides the chip once real routed geometry arrives", async () => {
+    fetchRoute.mockResolvedValue({
+      geometry: { type: "LineString", coordinates: ROUTED_COORDS },
+      distanceMeters: 2400,
+      durationSeconds: 420,
+    });
+
+    const { queryByRole } = render(
+      <RouteMap stationCoords={STATION} incidentCoords={INCIDENT} />,
+    );
+
+    await waitFor(() => expect(queryByRole("status")).toBeNull());
+  });
+
+  it("hides the chip after a failed fetch (straight-line fallback shows)", async () => {
+    fetchRoute.mockRejectedValue(new Error("backend down"));
+
+    const { queryByRole } = render(
+      <RouteMap stationCoords={STATION} incidentCoords={INCIDENT} />,
+    );
+
+    await waitFor(() => expect(queryByRole("status")).toBeNull());
+    expect(mockMap.addSource).toHaveBeenCalled();
+  });
+
+  it("never shows the chip when coords are missing — nothing is fetching", () => {
+    const { queryByRole } = render(
+      <RouteMap stationCoords={null} incidentCoords={{ lat: 1, lng: 2 }} />,
+    );
+
+    expect(queryByRole("status")).toBeNull();
+  });
 });

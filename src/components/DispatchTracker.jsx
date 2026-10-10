@@ -49,6 +49,10 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
       : null;
   const distanceMeters = route?.distanceMeters ?? provisional?.distanceMeters;
   const durationSeconds = route?.durationSeconds ?? provisional?.durationSeconds;
+  // `route === null` means the numbers on screen are the straight-line
+  // estimate — including after a failed fetch, where the provisional
+  // read stays up. Mark that honestly with ≈ (ETA already carries ~).
+  const distanceIsProvisional = route == null;
 
   useEffect(() => {
     if (
@@ -179,7 +183,7 @@ export default function DispatchTracker({ incident, onClose, onResolved, onStatu
             <div className="text-[11px] uppercase tracking-wide text-ink-dim">Distance</div>
             <div className="font-mono text-lg font-semibold">
               {distanceMeters != null
-                ? `${(distanceMeters / 1000).toFixed(1)} km`
+                ? `${distanceIsProvisional ? "≈" : ""}${(distanceMeters / 1000).toFixed(1)} km`
                 : "—"}
             </div>
           </div>

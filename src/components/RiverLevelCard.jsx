@@ -98,10 +98,16 @@ export default function RiverLevelCard({ river, loading, error, onRetry, updated
             </p>
           )}
 
-          {(source || clock) && (
+          {/* Background refresh: keep the level + source on screen and
+              swap the timestamp for a subtle cue while the fetch runs. */}
+          {(source || clock || loading) && (
             <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-border pt-2 text-[11px]">
               {source && <span className={source.className}>{source.text}</span>}
-              {clock && <span className="text-ink-dim">Updated {clock}</span>}
+              {loading ? (
+                <span className="animate-pulse text-ink-dim">Refreshing…</span>
+              ) : (
+                clock && <span className="text-ink-dim">Updated {clock}</span>
+              )}
             </div>
           )}
         </>

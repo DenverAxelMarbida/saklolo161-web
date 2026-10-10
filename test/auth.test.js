@@ -227,6 +227,141 @@ describe("onAuthChange", () => {
   });
 });
 
+describe("onAuthRestore", () => {
+  it("defers the callback until Firebase's first emission arrives", () => {
+    auth.onAuthChange(vi.fn()); // starts the shared subscription
+    const cb = vi.fn();
+    auth.onAuthRestore(cb);
+
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  it("fires pending callbacks when the first emission arrives, even a null one", async () => {
+    auth.onAuthChange(vi.fn());
+    const cb = vi.fn();
+    auth.onAuthRestore(cb);
+
+    await lastFirebaseListener()(null); // signed-out restore completes
+
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires immediately for a subscriber once the restore already completed", async () => {
+    auth.onAuthChange(vi.fn());
+    await lastFirebaseListener()(null); // restore done before subscribing
+
+    const cb = vi.fn();
+    auth.onAuthRestore(cb);
+
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires immediately when the restore resolved to an authenticated session", async () => {
+    auth.onAuthChange(vi.fn());
+    await lastFirebaseListener()(makeFirebaseUser());
+
+    const cb = vi.fn();
+    auth.onAuthRestore(cb);
+
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it("unsubscribe before the first emission prevents the callback", async () => {
+    auth.onAuthChange(vi.fn());
+    const cb = vi.fn();
+    const unsubscribe = auth.onAuthRestore(cb);
+    unsubscribe();
+
+    await lastFirebaseListener()(null);
+
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  it("signed-in: fires only AFTER subscribers see the authenticated state (no Login flash)", async () => {
+    const order = [];
+    auth.onAuthRestore(() => {
+      order.push({
+        listener: "restore",
+        session: auth.getStoredAuth() ? "signed-in" : "signed-out",
+      });
+    });
+    // Start the shared subscription and record when the frozen
+    // onAuthChange contract pushes the resolved session.
+    auth.onAuthChange((a) => {
+      if (a) order.push({ listener: "auth", session: "signed-in" });
+    });
+
+    await lastFirebaseListener()(makeFirebaseUser());
+
+    // The restore signal must never lift App's gate before the auth
+    // listener has been handed the resolved session.
+    expect(order[order.length - 1]).toEqual({
+      listener: "restore",
+      session: "signed-in",
+    });
+    expect(order.some((e) => e.listener === "auth")).toBe(true);
+    expect(order.findIndex((e) => e.listener === "restore")).toBeGreaterThan(
+      order.findIndex((e) => e.listener === "auth")
+    );
+  });
+
+  it("signed-out: fires only AFTER subscribers see null", async () => {
+    // Seed a live snapshot so the cold-start fire and the signed-out
+    // decision are both observable through onAuthChange.
+    localStorage.setItem(
+      "saklolo_auth_snapshot",
+      JSON.stringify({
+        token: "snap-token",
+        user: { uid: "u9", email: "x@marikina.gov", agency: "FLOOD", role: "dispatcher" },
+        exp: Date.now() + 60_000,
+      }),
+    );
+    const order = [];
+    auth.onAuthChange((a) =>
+      order.push({ listener: "auth", session: a ? "signed-in" : "signed-out" })
+    );
+    auth.onAuthRestore(() =>
+      order.push({
+        listener: "restore",
+        session: auth.getStoredAuth() ? "signed-in" : "signed-out",
+      })
+    );
+    order.length = 0; // drop the synchronous cold-start fire
+
+    await lastFirebaseListener()(null);
+
+    // Subscribers must see the signed-out decision before the restore
+    // signal lifts App's gate — and the snapshot must already be gone.
+    expect(order).toEqual([
+      { listener: "auth", session: "signed-out" },
+      { listener: "restore", session: "signed-out" },
+    ]);
+  });
+
+  it("routes an initialization failure to onError instead of throwing", async () => {
+    const fbAuth = await import("firebase/auth");
+    fbAuth.onIdTokenChanged.mockImplementationOnce(() => {
+      throw new Error("init boom");
+    });
+    const cb = vi.fn();
+    const onError = vi.fn();
+
+    let threw = false;
+    let unsubscribe;
+    try {
+      unsubscribe = auth.onAuthRestore(cb, onError);
+    } catch {
+      threw = true;
+    }
+
+    expect(threw).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0].message).toBe("init boom");
+    expect(cb).not.toHaveBeenCalled();
+    unsubscribe?.();
+  });
+});
+
 describe("logout", () => {
   it("signs out of Firebase, clears the cache, and notifies null", async () => {
     const cb = vi.fn();

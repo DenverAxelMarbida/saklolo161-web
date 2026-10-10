@@ -84,6 +84,30 @@ describe("DispatchTracker metric readout", () => {
     // Scope to the turnout cell — other stats (e.g. phone) also fall back to a dash.
     expect(turnoutLabel.nextElementSibling.textContent).toBe("—");
   });
+
+  it("marks the distance as approximate until the real route arrives", async () => {
+    let resolveFetch;
+    fetchRoute.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    renderTracker(makeIncident());
+
+    expect(screen.getByText("≈1.6 km")).toBeTruthy();
+    expect(screen.queryByText("1.6 km")).toBeNull();
+
+    resolveFetch({
+      geometry: null,
+      distanceMeters: 2400,
+      durationSeconds: 300,
+    });
+
+    expect(await screen.findByText("2.4 km")).toBeTruthy();
+    expect(screen.queryByText("≈1.6 km")).toBeNull();
+  });
 });
 
 describe("DispatchTracker — dialog dismissal", () => {
