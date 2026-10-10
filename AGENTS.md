@@ -20,37 +20,61 @@ prefixed `VITE_` or it's silently stripped from the bundle.
 - **Phase 1 — Backend:** done, see `saklolo161-backend`'s `AGENTS.md`.
 - **Phase 2 — Frontend UI (done):**
   - Control Room, Triage Modal, Live Tracker — implemented.
-  - **Auth (JWT):** login (`src/lib/auth.js`), 401-driven sign-out,
-    agency scoping. Step-by-step list used:
-    `saklolo161-web-phase2-tasks.md` (tasks 2.1–2.3).
+  - **Auth:** login (`src/lib/auth.js`), 401-driven sign-out,
+    agency scoping (tasks 2.1–2.3).
   - **Shared filter state + Mark En Route:** category filter lifted out
     of `ActiveQueue.jsx` into `ControlRoom.jsx`, defaulted to the
     signed-in dispatcher's agency; a real "Mark En Route" trigger in
-    `DispatchTracker.jsx`. Tasks 2.4–2.6 in the same file.
+    `DispatchTracker.jsx` (tasks 2.4–2.6).
   - Station routing uses a local fallback config
     (`src/lib/config.js` → `CATEGORIES[key].stations`) with `id`/`name`
     only — never phone numbers.
-- **Phase 3 (in progress):** real routing/ETA from `GET /api/routes`,
-  evidence viewer, a vitest/RTL suite, then the Firebase Auth cutover
-  (touches `src/lib/auth.js` only) as a scheduled coordinated window.
-  - Task list: `../Phase 3/saklolo161-web-phase3-tasks.md`
-  - Frozen contract: `../Phase 3/saklolo161-phase3-contracts.md`
-  - Auth cutover checklist: `../Phase 3/saklolo161-auth-coordination.md`
-  See "Phase 3 migration path" below.
+- **Staff User Management (done):** admin-only user table
+  (`src/components/UserManagement.jsx`, embedded in the Settings tab),
+  Add/Edit modal with password policy, enable/disable with confirm —
+  backed by `GET/POST /api/users`, `PATCH /api/users/:uid`,
+  `PATCH /api/users/:uid/status`, plus self-service
+  `POST /api/users/me/password` (`ChangePasswordModal.jsx`,
+  `PasswordInput.jsx`, `PasswordRequirements.jsx`).
+- **Control-room polish (done):** visual polish passes, resolved-log
+  timestamps, evidence-upload status in the queue, loading/error/auth
+  hardening.
+- **Phase 3 (done):** real routing/ETA from `GET /api/routes`
+  (`RouteMap.jsx`, `DispatchTracker.jsx` with straight-line fallback),
+  evidence viewer (`EvidenceGallery.jsx`), a 22-file vitest suite,
+  and the Firebase Auth cutover (`src/lib/auth.js` now uses the
+  Firebase client SDK — `signInWithEmailAndPassword`,
+  `onIdTokenChanged` — with legacy localStorage keys purged).
+  - Frozen contract: `saklolo161-phase3-contracts.md`
+  - Auth cutover checklist: `saklolo161-auth-coordination.md`
+  (historical — the coordinated window has landed).
 
-## Design Tokens (must match exactly — `src/index.css` `@theme`)
+## Design Tokens
+
+Category colors are canonical in `src/lib/config.js`
+(`CATEGORIES[key].color`, applied via inline styles) — do not redeclare
+them locally:
+
+| Category | Hex | Use |
+|---|---|---|
+| Fire Red | `#EF4444` | fire incidents |
+| Medical Orange | `#F97316` | medical incidents |
+| Flood Blue | `#3B82F6` | flood/river warnings |
+| Crime Slate | `#334155` | police/crime incidents |
+
+Chrome/status tokens live in `src/index.css` (`@theme`; `--color-x`
+auto-generates `bg-x`/`text-x` — Tailwind v4, no `tailwind.config.js`):
 
 | Token | Hex | Use |
 |---|---|---|
 | `--color-header` / Dark Navy | `#111A3A` | header, containers |
-| `--color-fire` / Fire Red | `#EF4444` | fire incidents |
-| `--color-medical` / Medical Orange | `#F97316` | medical incidents |
-| `--color-flood` / Flood Blue | `#3B82F6` | flood/river warnings |
-| `--color-crime` / Crime Slate | `#334155` | police/crime incidents |
-| `--color-risk-low` / `--color-resolved` / Mint Green | `#10B981` | live badges, resolve buttons — **reserved for the resolved state, don't reuse for other action buttons** |
+| `--color-resolved` / `--color-risk-low` / Mint Green | `#10B981` | live badges, resolve buttons — **reserved for the resolved state, don't reuse for other action buttons** |
 
-Tailwind v4: tokens declared in CSS via `@theme`, not
-`tailwind.config.js`. `--color-x` auto-generates `bg-x`/`text-x`.
+Note: `index.css` also declares `--color-fire/medical/flood/crime`
+tokens with older values (`#e4572e/#2f80ed/#17a2b8/#8b5cf6`) that are
+used as generic red/orange action accents (buttons, empty states) —
+they are NOT the category palette. If you need a category color, read
+`CATEGORIES`, never the CSS token.
 
 ## Hard Rules (do not violate)
 
@@ -69,7 +93,12 @@ Tailwind v4: tokens declared in CSS via `@theme`, not
 4. **`DispatchTracker.jsx`'s stepper reflects the incident's real
    `status` field — never a locally-guessed or hardcoded step index.**
    This was a real bug (see Known Gaps history) — don't reintroduce it.
-5. Code should be React 19 / Express, matching existing patterns — see
+5. **User Management is admin-only, end to end.** The Users tab renders
+   only for `role === "admin"`, and the backend gates every `/api/users`
+   route with `requireAdmin`. Never expose enable/disable or account
+   creation to non-admin roles, and never put passwords anywhere but
+   the Add modal + change-password flow.
+6. Code should be React 19 / Express, matching existing patterns — see
    "Established Patterns" below before introducing a new approach.
 
 ## Established Patterns
@@ -85,11 +114,17 @@ Tailwind v4: tokens declared in CSS via `@theme`, not
   endpoint; `resolveIncident`/`markEnRoute` are thin wrappers over it.
   Don't add a bespoke API function per status.
 - **Auth as a subscription, not a mount check:** `src/lib/auth.js`
-  exposes `onAuthChange(callback)`, deliberately shaped like Firebase's
-  `onAuthStateChanged` even though Phase 2 just reads `localStorage`
-  synchronously. `App.jsx` subscribes once; it never calls
-  `getStoredAuth()` directly on mount. This is what makes the Phase 3
-  Firebase Auth cutover a one-file change — preserve this shape.
+  exposes `onAuthChange(callback)`, shaped like Firebase's
+  `onAuthStateChanged`; it now runs the real Firebase client SDK
+  (`signInWithEmailAndPassword`, `onIdTokenChanged`) with legacy
+  localStorage keys purged on load. `App.jsx` subscribes once; it never
+  calls `getStoredAuth()` directly on mount. Preserve this shape.
+- **User Management without a router:** `UserManagement.jsx` renders
+  embedded inside the Settings admin tab (plus a legacy `"users"` view
+  that lands there); all account operations go through thin
+  `src/lib/api.js` wrappers (`listUsers`/`createUser`/`updateUser`/
+  `setUserEnabled`, `changeOwnPassword`). Don't add routing or
+  backend logic here.
 - **Single source of truth for categories:** `CATEGORIES`/
   `CATEGORY_KEYS` in `src/lib/config.js` drive color, label, and
   station list everywhere. Don't redeclare category metadata locally.
@@ -97,30 +132,36 @@ Tailwind v4: tokens declared in CSS via `@theme`, not
   `useIncidentPolling` fall back to `src/data/mockIncidents.js` on
   fetch failure (Render free-tier cold starts / local dev without
   backend running). Preserve this in new data-fetching components.
+  `RouteMap.jsx` likewise draws the straight line only when
+  `GET /api/routes` geometry is unavailable.
+
+## Staff Admin API (consumed, never implemented here)
+
+| Call | Endpoint | Notes |
+|---|---|---|
+| `listUsers` | `GET /api/users` | Admin only |
+| `createUser` | `POST /api/users` | Admin only; password set once at creation |
+| `updateUser` | `PATCH /api/users/:uid` | Admin only; email / agency / role |
+| `setUserEnabled` | `PATCH /api/users/:uid/status` | Admin only; confirm before disabling |
+| `changeOwnPassword` | `POST /api/users/me/password` | Any signed-in user; see `ChangePasswordModal.jsx` |
 
 ## Local Testing Setup
 
 Pointing `VITE_API_BASE_URL` straight at the live Render URL works for
-basic day-to-day frontend work — zero setup, and that's how Phase 1
-was meant to be consumed. But for the Phase 2 auth/agency-scoping work
-specifically, clone and run `saklolo161-backend` locally instead.
-Reasons this matters right now, not just in general:
+basic day-to-day frontend work — zero setup. But when iterating fast
+or testing auth/agency-scoped behavior, clone and run
+`saklolo161-backend` locally instead. Reasons this matters right now,
+not just in general:
 
-1. **Unreleased backend work isn't live yet.** `authService.login()`,
-   agency-scoped `GET /api/incidents` filtering, and `markEnRoute` all
-   land on the backend before they're deployed to Render. There's
-   nothing to test 2.1–2.6 against remotely until that happens — local
-   backend is the only way to test them early.
+1. **No shared-quota burn.** The per-phone rate limiter is shared
+   across everyone hitting the same live instance — local backend
+   gives each dev their own quota.
 2. **Render's free tier cold-starts.** Every dev hitting the same live
    instance after it's idled eats that delay on every request during
    rapid iteration, not just on first load.
-3. **Shared, resettable mock data means shared test pollution.**
-   `mockIncidents.js`/`mockUsers.js` are one in-memory array on the
-   live instance — a dispatched test incident or a newly-provisioned
-   test account collides with whatever mobile or another web dev is
-   doing the same afternoon, and a Render restart wipes it all at once.
-4. **The per-phone rate limiter (once 1.5 ships) is shared** across
-   everyone hitting the same live instance.
+3. **Shared live data means shared test pollution.**
+   Test incidents and provisioned test accounts collide with whatever
+   mobile or another web dev is doing the same afternoon.
 
 Setup:
 
@@ -138,41 +179,35 @@ push. Running someone else's service locally to test against doesn't
 violate Hard Rule 1 ("never write backend code here"); nothing here is
 backend code, it's just what this repo's Axios calls point at.
 
-**Specific nuance for this repo:** once backend steps 1.3/1.4 (route
-protection) deploy to Render, the live dashboard needs matching web
-changes (2.1/2.2) landing in that same window — see the coordination
-note in `saklolo161-web-phase2-tasks.md`. Running backend locally in
-the meantime is how you test the paired changes together before that
-coordinated deploy, without either side being half-broken in
-production.
+Local runs need real Firebase credentials on the backend side (the
+backend server refuses to start without them) — coordinate with the
+backend lead rather than inventing stub auth here.
 
 ## Known Gaps (do not treat as "done" without flagging)
 
-- `DispatchTracker.jsx`: `STATION_COORDS` is a static demo constant,
-  and `Distance`/`ETA` are hardcoded strings — Phase 3 replaces them
-  with `station.coords` and `GET /api/routes` metrics (web task 1).
-- `RouteMap.jsx`: draws a straight line, not a real routed path. Phase 3
-  draws `GET /api/routes` geometry (web task 1); straight line remains
-  the graceful fallback.
-- Raw JWT stored in `localStorage` (`src/lib/auth.js`) is a known,
-  accepted XSS exposure surface for the Phase 2 staging/testing
-  deploy's small trusted user base — not hardened (httpOnly cookie +
-  CSRF) yet. The Phase 3 Firebase Auth cutover replaces the token model
-  entirely; revisit httpOnly/CSRF hardening before any public-facing
-  production login.
+- No real GPS/telemetry-based "En Route" detection — the dispatcher's
+  manual "Mark En Route" action is the trigger; needs a responder
+  client to generate telemetry.
+- Auth session hardening is still future work: Firebase now owns the
+  token model, but revisit httpOnly/CSRF-style hardening before any
+  public-facing production login beyond the current trusted dispatcher
+  base.
 
-## Phase 3 Migration Path
+History (resolved, kept so the rules above stay motivated):
+`DispatchTracker.jsx` once guessed the stepper index locally instead of
+reading `status` — fixed by reflecting the real field (Hard Rule 4).
 
-Net effect: the Phase 3 Firebase migration touches
-**`src/lib/auth.js` only** on this repo's side —
-`App.jsx`/`Header.jsx`/`api.js`/filter logic never touch Firebase
-directly, only `onAuthChange()`'s output shape.
+## Phase 3 Migration Path (completed — reference only)
 
-See `../Phase 3/saklolo161-auth-coordination.md`'s full cutover
-checklist before running that migration — re-provisioning accounts and
-the scheduled forced re-login need a coordinated window with the
-backend's Firebase deploy, not a silent deploy (the one cross-repo
-coordinated change in Phase 3).
+The Phase 3 Firebase migration touched **`src/lib/auth.js` only** on
+this repo's side — `App.jsx`/`Header.jsx`/`api.js`/filter logic never
+touch Firebase directly, only `onAuthChange()`'s output shape. That
+one-file-swap design held: the cutover landed without touching any
+consumer.
+
+See `saklolo161-auth-coordination.md`'s checklist for the historical
+record (re-provisioned accounts, forced re-login). Any future auth
+migration is a new coordinated window, not a silent deploy.
 
 ## Mobile App
 
