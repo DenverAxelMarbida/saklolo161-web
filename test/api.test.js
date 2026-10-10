@@ -9,6 +9,14 @@ import {
   updateUser,
   setUserEnabled,
   changeOwnPassword,
+  listStations,
+  getStation,
+  createStation,
+  updateStation,
+  setStationActive,
+  addUnit,
+  updateUnit,
+  setUnitActive,
 } from "../src/lib/api";
 import { PRODUCTION_INCIDENTS } from "./fixtures.production";
 import { resolveMediaUrl } from "../src/lib/api";
@@ -466,6 +474,98 @@ describe("user management endpoints", () => {
 
     expect(mockPost).toHaveBeenCalledWith("/api/users/me/password", payload);
     expect(result.success).toBe(true);
+  });
+});
+
+describe("station management endpoints", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("listStations GETs /api/stations with category + includeInactive params", async () => {
+    const stations = [{ id: "FIRE_BFP_MAIN_STATION", name: "Fire Station" }];
+    mockGet.mockResolvedValue({ data: { success: true, data: stations } });
+
+    const result = await listStations({ category: "Fire", includeInactive: true });
+
+    expect(mockGet).toHaveBeenCalledWith("/api/stations", {
+      params: { category: "Fire", includeInactive: true },
+    });
+    expect(result).toEqual(stations);
+  });
+
+  it("listStations defaults to no params and an empty list on a null payload", async () => {
+    mockGet.mockResolvedValue({ data: { data: null } });
+
+    const result = await listStations();
+
+    expect(mockGet).toHaveBeenCalledWith("/api/stations", { params: {} });
+    expect(result).toEqual([]);
+  });
+
+  it("getStation GETs /api/stations/:id and returns the station", async () => {
+    const station = { id: "FLOOD_RIVER_COMMAND", name: "River Park Authority" };
+    mockGet.mockResolvedValue({ data: { success: true, data: station } });
+
+    expect(await getStation("FLOOD_RIVER_COMMAND")).toEqual(station);
+    expect(mockGet).toHaveBeenCalledWith("/api/stations/FLOOD_RIVER_COMMAND");
+  });
+
+  it("createStation POSTs /api/stations with the full payload", async () => {
+    mockPost.mockResolvedValue({ data: { success: true, data: { id: "X" } } });
+
+    const payload = { id: "X", name: "Test", category: "Fire" };
+    const result = await createStation(payload);
+
+    expect(mockPost).toHaveBeenCalledWith("/api/stations", payload);
+    expect(result.success).toBe(true);
+  });
+
+  it("updateStation PATCHes /api/stations/:id with the changed fields", async () => {
+    mockPatch.mockResolvedValue({ data: { success: true, data: { id: "X" } } });
+
+    await updateStation("X", { name: "Renamed" });
+
+    expect(mockPatch).toHaveBeenCalledWith("/api/stations/X", { name: "Renamed" });
+  });
+
+  it("setStationActive PATCHes /api/stations/:id/status with { isActive }", async () => {
+    mockPatch.mockResolvedValue({ data: { success: true } });
+
+    await setStationActive("X", false);
+    expect(mockPatch).toHaveBeenCalledWith("/api/stations/X/status", { isActive: false });
+
+    await setStationActive("X", true);
+    expect(mockPatch).toHaveBeenLastCalledWith("/api/stations/X/status", { isActive: true });
+  });
+
+  it("addUnit POSTs /api/stations/:id/units with the unit payload", async () => {
+    mockPost.mockResolvedValue({ data: { success: true } });
+
+    await addUnit("X", { id: "u1", name: "Unit 1" });
+
+    expect(mockPost).toHaveBeenCalledWith("/api/stations/X/units", {
+      id: "u1",
+      name: "Unit 1",
+    });
+  });
+
+  it("updateUnit PATCHes /api/stations/:id/units/:unitId", async () => {
+    mockPatch.mockResolvedValue({ data: { success: true } });
+
+    await updateUnit("X", "u1", { name: "Renamed Unit" });
+
+    expect(mockPatch).toHaveBeenCalledWith("/api/stations/X/units/u1", {
+      name: "Renamed Unit",
+    });
+  });
+
+  it("setUnitActive PATCHes /api/stations/:id/units/:unitId/status with { isActive }", async () => {
+    mockPatch.mockResolvedValue({ data: { success: true } });
+
+    await setUnitActive("X", "u1", false);
+
+    expect(mockPatch).toHaveBeenCalledWith("/api/stations/X/units/u1/status", {
+      isActive: false,
+    });
   });
 });
 

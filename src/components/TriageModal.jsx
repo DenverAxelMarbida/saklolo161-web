@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CATEGORIES } from "../lib/config";
-import { dispatchIncident, normalizeIncident } from "../lib/api";
+import { dispatchIncident, listStations, normalizeIncident } from "../lib/api";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import MiniIncidentMap from "./MiniIncidentMap";
 import EvidenceGallery from "./EvidenceGallery";
@@ -33,19 +33,109 @@ export const chipInkStyle = (hex) => {
   return { color: `color-mix(in srgb, ${hex} ${mixPct}%, white)` };
 };
 
+// Station units arrive as legacy strings ("Rescue Boat Unit #1") or
+// managed objects ({ id, name, isActive }). Expose the ACTIVE unit
+// display names — the dispatch request sends the name (the legacy
+// contract), and the backend also accepts the id.
+const activeUnitNames = (station) =>
+  (station?.assignedUnits ?? [])
+    .map((u) =>
+      typeof u === "string"
+        ? { name: u, isActive: true }
+        : { name: u?.name, isActive: u?.isActive !== false },
+    )
+    .filter((u) => u.isActive && typeof u.name === "string" && u.name !== "")
+    .map((u) => u.name);
+
 export default function TriageModal({ incident, onClose, onDispatched }) {
   const rootRef = useRef(null);
   useDialogDismiss(rootRef, onClose);
 
   const category = CATEGORIES[incident.category];
-  const [stationId, setStationId] = useState(category.stations[0].id);
+  // Backend Title-Case category for the live station listing. The
+  // web normalizes incident categories to UPPERCASE display keys;
+  // the backend stores Title-Case — map between them here, at the
+  // boundary, and nowhere else.
+  const backendCategory =
+    { MEDICAL: "Medical", FIRE: "Fire", FLOOD: "Flood", CRIME: "Crime" }[
+      incident.category
+    ];
+
+  // Static CATEGORIES entries seed the dropdowns so the modal is
+  // usable instantly (and in every unit test); the live listing
+  // below replaces them when the backend answers.
+  const [stations, setStations] = useState(() => category?.stations ?? []);
+  const [stationId, setStationId] = useState(() => category?.stations[0]?.id ?? "");
   const [assignedUnit, setAssignedUnit] = useState(
-    () => category.stations[0].assignedUnits[0] ?? "",
+    () => activeUnitNames(category?.stations[0])[0] ?? "",
   );
+  const [stationsLoading, setStationsLoading] = useState(false);
+  const [stationsNotice, setStationsNotice] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  const station = category.stations.find((s) => s.id === stationId);
+  // Load the CURRENT active stations for this incident's category —
+  // deactivated stations/units never reach these dropdowns. Depends
+  // on the category STRING (not the incident object: App re-syncs
+  // selectedIncident from polling, and refetching on every poll tick
+  // would reset the dispatcher's in-progress selection).
+  useEffect(() => {
+    if (!backendCategory) return;
+    let cancelled = false;
+    setStationsLoading(true);
+    setStationsNotice(null);
+    listStations({ category: backendCategory })
+      .then((live) => {
+        if (cancelled || !Array.isArray(live)) return;
+        setStations(live);
+        setStationId(live[0]?.id ?? "");
+        setAssignedUnit(activeUnitNames(live[0])[0] ?? "");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Graceful degradation (same policy as WeatherCard): keep the
+        // static fallback so dispatch stays possible offline — the
+        // backend still enforces active-only at dispatch time.
+        setStationsNotice(
+          "Live station list unavailable — showing default stations.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setStationsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [backendCategory]);
+
+  if (!category) {
+    return (
+      <div
+        ref={rootRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Triage incident #${incident.id}`}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none animate-fade-in"
+      >
+        <div className="w-full max-w-md animate-pop-in rounded-lg border border-border bg-panel p-6 shadow-modal">
+          <p className="text-sm text-fire">
+            Unknown incident category “{incident.category}” — dispatch is unavailable.
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-4 w-full rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const station = stations.find((s) => s.id === stationId) ?? null;
+  const unitOptions = activeUnitNames(station);
 
   // The unit dropdown always reflects the CURRENTLY selected station.
   // Default/seed it to that station's first unit whenever the station
@@ -54,8 +144,8 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
   // dispatchController.js validation.
   const handleStationChange = (nextStationId) => {
     setStationId(nextStationId);
-    const nextStation = category.stations.find((s) => s.id === nextStationId);
-    setAssignedUnit(nextStation.assignedUnits[0] ?? "");
+    const nextStation = stations.find((s) => s.id === nextStationId);
+    setAssignedUnit(activeUnitNames(nextStation)[0] ?? "");
   };
 
   const handleDispatch = async () => {
@@ -206,39 +296,55 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
               <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station">
                 Dispatch To
               </label>
-              {/* Populated dynamically from CATEGORIES[incident.category].stations —
-                  swapping the incident's category swaps the whole option list. */}
+              {/* Populated from the LIVE active-station listing for this
+                  incident's category (static CATEGORIES entries seed the
+                  list until the backend answers). */}
               <select
                 id="station"
                 value={stationId}
                 onChange={(e) => handleStationChange(e.target.value)}
-                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+                disabled={stationsLoading || stations.length === 0}
+                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none disabled:opacity-60"
               >
-                {category.stations.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
+                {stationsLoading && stations.length === 0 ? (
+                  <option value="">Loading stations…</option>
+                ) : stations.length === 0 ? (
+                  <option value="">No active stations available</option>
+                ) : (
+                  stations.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))
+                )}
               </select>
+              {stationsNotice && (
+                <p className="mt-1 text-xs text-ink-dim">{stationsNotice}</p>
+              )}
             </div>
 
             <div>
               <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="unit">
                 Assigned Unit
               </label>
-              {/* Options populated from the SELECTED station's assignedUnits;
-                  reset to its first unit whenever station changes. */}
+              {/* Options populated from the SELECTED station's active
+                  units; reset to its first unit whenever station changes. */}
               <select
                 id="unit"
                 value={assignedUnit}
                 onChange={(e) => setAssignedUnit(e.target.value)}
-                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+                disabled={unitOptions.length === 0}
+                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none disabled:opacity-60"
               >
-                {(station.assignedUnits ?? []).map((unit) => (
-                  <option key={unit} value={unit}>
-                    {unit}
-                  </option>
-                ))}
+                {unitOptions.length === 0 ? (
+                  <option value="">No active units available</option>
+                ) : (
+                  unitOptions.map((unit) => (
+                    <option key={unit} value={unit}>
+                      {unit}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -250,11 +356,15 @@ export default function TriageModal({ incident, onClose, onDispatched }) {
         <div className="border-t border-border p-4">
           <button
             onClick={handleDispatch}
-            disabled={submitting}
+            disabled={submitting || !station || !assignedUnit}
             className={`w-full rounded-md py-3 text-sm font-semibold transition-[opacity,transform] duration-150 active:scale-[0.985] disabled:opacity-60 ${inkClassFor(category.color)}`}
             style={{ backgroundColor: category.color }}
           >
-            {submitting ? "Dispatching…" : `DISPATCH ${station.name.toUpperCase()} UNIT ➔`}
+            {submitting
+              ? "Dispatching…"
+              : station && assignedUnit
+                ? `DISPATCH ${station.name.toUpperCase()} UNIT ➔`
+                : "NO ACTIVE STATION AVAILABLE"}
           </button>
         </div>
       </div>

@@ -213,6 +213,67 @@ export const setUserEnabled = async (uid, enabled) => {
   return response.data;
 };
 
+// ---- Admin station + assigned-unit management (GET/POST/PATCH /api/stations) ----
+// Reads (list/get) run behind verifyAuth only — any authenticated
+// dispatcher or admin may call them, but dispatchers ALWAYS receive
+// active records only (the backend hides inactive ones; admins pass
+// includeInactive to see everything). Every write is admin-only
+// behind verifyAuth + requireAdmin on the backend — a 403 here means
+// "not an admin". The 401 → logout interceptor above only reacts to
+// 401, so a 403 never signs anyone out.
+
+// Returns the plain station list ({ success, data } unwrapped).
+// category is the backend Title-Case name ("Medical"|"Fire"|"Flood"|"Crime").
+export const listStations = async ({ category, includeInactive } = {}) => {
+  const params = {};
+  if (category) params.category = category;
+  if (includeInactive) params.includeInactive = true;
+  const response = await api.get("/api/stations", { params });
+  return response.data?.data ?? [];
+};
+
+export const getStation = async (stationId) => {
+  const response = await api.get(`/api/stations/${stationId}`);
+  return response.data?.data;
+};
+
+export const createStation = async (payload) => {
+  const response = await api.post("/api/stations", payload);
+  return response.data;
+};
+
+export const updateStation = async (stationId, payload) => {
+  const response = await api.patch(`/api/stations/${stationId}`, payload);
+  return response.data;
+};
+
+export const setStationActive = async (stationId, isActive) => {
+  const response = await api.patch(`/api/stations/${stationId}/status`, {
+    isActive,
+  });
+  return response.data;
+};
+
+export const addUnit = async (stationId, payload) => {
+  const response = await api.post(`/api/stations/${stationId}/units`, payload);
+  return response.data;
+};
+
+export const updateUnit = async (stationId, unitId, payload) => {
+  const response = await api.patch(
+    `/api/stations/${stationId}/units/${unitId}`,
+    payload,
+  );
+  return response.data;
+};
+
+export const setUnitActive = async (stationId, unitId, isActive) => {
+  const response = await api.patch(
+    `/api/stations/${stationId}/units/${unitId}/status`,
+    { isActive },
+  );
+  return response.data;
+};
 // ---- Self-service password change (POST /api/users/me/password) ----------
 // verifyAuth only on the backend — any authenticated dispatcher or
 // admin changes their OWN password; the uid comes from the token,

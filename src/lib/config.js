@@ -6,11 +6,14 @@ export const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
 export const MARIKINA_CENTER = { lat: 14.6507, lng: 121.1029 };
 
-// Single source of truth for category → color/label/target-station mapping.
-// Every screen (tally grid, markers, filters, station selector) reads from
-// this instead of re-declaring its own copy.
-// Station id/name/assignedUnits mirror backend/config/stations.js exactly.
-// The ID is what the backend's stationService resolves by; units must be
+// Single source of truth for category → color/label mapping. Every
+// screen (tally grid, markers, filters) reads colors/labels from this
+// instead of re-declaring its own copy.
+// Station entries below mirror backend/config/stations.js and seed the
+// TriageModal dropdowns until the live GET /api/stations listing
+// answers (graceful-degradation fallback only — the backend is the
+// source of truth for which stations/units are active). The station
+// ID is what the backend's stationService resolves by; units must be
 // members of that station's assignedUnits array or dispatch validation
 // rejects the request.
 export const CATEGORIES = {

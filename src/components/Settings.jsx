@@ -1,6 +1,7 @@
 import { useState } from "react";
 import ChangePasswordModal from "./ChangePasswordModal";
 import UserManagement from "./UserManagement";
+import StationManagement from "./StationManagement";
 import Policies from "./Policies";
 
 // Dedicated Settings section — reached via the Header gear button
@@ -8,7 +9,8 @@ import Policies from "./Policies";
 //
 // Tabbed for every role: "My Account" (all roles, reuses the existing
 // ChangePasswordModal — no second password-change system), "User
-// Management" (admins only, renders the EXISTING UserManagement
+// Management" and "Stations & Units" (admins only, rendering the
+// EXISTING UserManagement component and the StationManagement
 // component inline — no redirect to a separate top-level view), and
 // "Policies" (all roles: Acceptable Use, Data Privacy & Security,
 // RBAC information). UI gating only; the backend's verifyAuth +
@@ -26,13 +28,14 @@ export default function Settings({ user, onNavigate, initialSection }) {
     isAdmin && initialSection === "users" ? "users" : "account",
   );
 
-  // Tabs every role sees; admins additionally get User Management.
-  // The Policies tab is informational — readable by dispatchers and
+  // Tabs every role sees; admins additionally get User Management
+  // and Stations & Units. The Policies tab is informational — readable by dispatchers and
   // admins alike, since it describes rules rather than granting access.
   const tabs = isAdmin
     ? [
         { id: "account", label: "My Account" },
         { id: "users", label: "User Management" },
+        { id: "stations", label: "Stations & Units" },
         { id: "policies", label: "Policies" },
       ]
     : [
@@ -136,6 +139,12 @@ export default function Settings({ user, onNavigate, initialSection }) {
           /* Admin only — the EXISTING UserManagement component, inline */
           <div {...panelProps("users")} className="mt-6">
             <UserManagement embedded />
+          </div>
+        )}
+        {section === "stations" && isAdmin && (
+          /* Admin only — station + assigned-unit management, inline */
+          <div {...panelProps("stations")} className="mt-6">
+            <StationManagement embedded />
           </div>
         )}
         {section === "policies" && (

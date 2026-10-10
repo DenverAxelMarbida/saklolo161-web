@@ -57,13 +57,21 @@ vi.mock("../src/lib/api", () => ({
   updateUser: vi.fn(),
   setUserEnabled: vi.fn(),
   changeOwnPassword: vi.fn(),
+  listStations: vi.fn(),
+  getStation: vi.fn(),
+  createStation: vi.fn(),
+  updateStation: vi.fn(),
+  setStationActive: vi.fn(),
+  addUnit: vi.fn(),
+  updateUnit: vi.fn(),
+  setUnitActive: vi.fn(),
 }));
 
 // TriageModal/DispatchTracker import map modules at load time; they never
 // render in these tests, but the import must not touch real mapbox-gl.
 vi.mock("mapbox-gl", () => ({ default: { accessToken: "" } }));
 
-import { listUsers } from "../src/lib/api";
+import { listUsers, listStations } from "../src/lib/api";
 
 const dispatcherUser = {
   uid: "uid-fire",
@@ -82,6 +90,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   pollState.incidents = [];
   listUsers.mockResolvedValue([]);
+  listStations.mockResolvedValue([]);
   authState.payload = { token: "test-token", user: dispatcherUser };
 });
 
@@ -266,6 +275,35 @@ describe("Settings view", () => {
     expect(within(container).queryByText("User Management")).toBeNull();
     expect(within(container).queryByText("Open User Management")).toBeNull();
     expect(onNavigate).not.toHaveBeenCalledWith("users");
+  });
+
+  it("admin gets a Stations & Units tab that opens the station management inline", async () => {
+    const onNavigate = vi.fn();
+    render(<Settings user={adminUser} onNavigate={onNavigate} />);
+
+    expect(screen.getByRole("tab", { name: "Stations & Units" })).toBeTruthy();
+    expect(screen.queryByText("Add Station")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Stations & Units" }));
+
+    // StationManagement renders inside Settings — never navigates away.
+    expect(await screen.findByText("Add Station")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Stations & Units" }),
+    ).toBeTruthy();
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(listStations).toHaveBeenCalledWith({ includeInactive: true });
+  });
+
+  it("dispatcher does NOT see any Stations & Units option and never fetches stations", () => {
+    const onNavigate = vi.fn();
+    const { container } = render(
+      <Settings user={dispatcherUser} onNavigate={onNavigate} />,
+    );
+
+    expect(screen.queryByRole("tab", { name: "Stations & Units" })).toBeNull();
+    expect(within(container).queryByText("Stations & Units")).toBeNull();
+    expect(listStations).not.toHaveBeenCalled();
   });
 });
 
