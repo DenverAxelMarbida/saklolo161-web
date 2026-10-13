@@ -127,14 +127,6 @@ a[href],
   text-transform: uppercase;
 }
 
-.sak-tooltip-row {
-  color: var(--color-ink-dim);
-}
-
-.sak-tooltip-row b {
-  color: var(--color-ink);
-}
-
 .sak-tooltip-loc {
   color: var(--color-ink);
   font-weight: 600;

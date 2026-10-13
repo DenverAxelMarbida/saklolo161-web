@@ -24,7 +24,6 @@ function tooltipHTML(incident) {
     <div class="sak-tooltip">
       <span class="sak-tooltip-cat" style="background:${color}">${escapeHtml(label)}</span>
       <span class="sak-tooltip-status">${escapeHtml(incident.status || "")}</span>
-      <div class="sak-tooltip-row">Priority: <b>${escapeHtml(incident.priority || "")}</b></div>
       <div class="sak-tooltip-loc">${escapeHtml(incident.location || "Unknown location")}</div>
       <div class="sak-tooltip-elapsed">${elapsed} min ago</div>
     </div>
