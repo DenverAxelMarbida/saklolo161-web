@@ -130,6 +130,9 @@ describe("UserManagement", () => {
     render(<UserManagement />);
     fireEvent.click(await screen.findByText("Add Account"));
 
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "new@marikina.gov.ph" },
+    });
     fireEvent.change(screen.getByLabelText("Password"), {
       target: { value: STRONG },
     });
@@ -625,6 +628,61 @@ describe("UserManagement — search, filters, selection, and bulk disable", () =
     expect(screen.getByText("1 account selected.")).toBeTruthy();
     expect(screen.getByLabelText("Select flood@marikina.gov.ph").checked).toBe(true);
     expect(screen.queryByLabelText("Select fire@marikina.gov.ph")).toBeNull();
+  });
+});
+
+describe("UserManagement — account form email validation (before any submit)", () => {
+  it("rejects a malformed email inline and never calls the API", async () => {
+    listUsers.mockResolvedValue([]);
+    render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Add Account"));
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "not-an-email" },
+    });
+    expect(
+      await screen.findByText("Please enter a valid email address (e.g. dispatcher@marikina.gov.ph)."),
+    ).toBeTruthy();
+    expect(screen.getByText("Create Account").disabled).toBe(true);
+
+    // Even with a strong matching password, the invalid email blocks submit.
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: STRONG } });
+    fireEvent.change(screen.getByLabelText("Confirm Password"), { target: { value: STRONG } });
+    expect(screen.getByText("Create Account").disabled).toBe(true);
+    fireEvent.click(screen.getByText("Create Account"));
+    expect(createUser).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("Add Account");
+
+    // Correcting the email re-enables submit.
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "new@marikina.gov.ph" },
+    });
+    expect(screen.queryByText(/valid email address/)).toBeNull();
+    expect(screen.getByText("Create Account").disabled).toBe(false);
+  });
+
+  it("asks for an email address when the field is left empty", async () => {
+    listUsers.mockResolvedValue([]);
+    render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Add Account"));
+
+    fireEvent.blur(screen.getByLabelText("Email"));
+    expect(await screen.findByText("Please enter an email address.")).toBeTruthy();
+    expect(screen.getByText("Create Account").disabled).toBe(true);
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it("an empty bulk selection cannot open the password dialog", async () => {
+    listUsers.mockResolvedValue([makeUser({ uid: "uid-2", email: "fire@marikina.gov.ph" })]);
+    render(<UserManagement currentUser={{ uid: "uid-1" }} />);
+    await screen.findByText("fire@marikina.gov.ph");
+
+    const bulkButton = screen.getByText("Disable Selected");
+    expect(bulkButton.disabled).toBe(true);
+    fireEvent.click(bulkButton);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(setUserEnabled).not.toHaveBeenCalled();
   });
 });
 

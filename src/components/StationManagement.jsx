@@ -10,6 +10,18 @@ import {
 } from "../lib/api";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import { errorMessage } from "../lib/errorMessages";
+import { CATEGORIES } from "../lib/config";
+import {
+  AdminToolbar,
+  SearchField,
+  FilterSelect,
+  ResetFiltersButton,
+  BulkActionBar,
+  ResultCount,
+  Chip,
+  RowButton,
+  focusRing,
+} from "./adminShared";
 import AdminPasswordModal from "./AdminPasswordModal";
 import Skeleton from "./Skeleton";
 
@@ -222,7 +234,7 @@ function StationFormModal({ mode, form, setForm, error, saving, onCancel, onSubm
             />
           </div>
 
-          {error && <p className="text-sm text-fire">{error}</p>}
+          {error && <p role="alert" className="text-sm text-fire">{error}</p>}
 
           {children}
         </div>
@@ -230,14 +242,14 @@ function StationFormModal({ mode, form, setForm, error, saving, onCancel, onSubm
         <div className="flex gap-2 border-t border-border p-4">
           <button
             onClick={onCancel}
-            className="flex-1 rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
+            className={`flex-1 rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink ${focusRing}`}
           >
             Cancel
           </button>
           <button
             onClick={onSubmit}
             disabled={saving}
-            className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60"
+            className={`flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60 ${focusRing}`}
           >
             {saving ? "Saving…" : isAdd ? "Create Station" : "Save Changes"}
           </button>
@@ -294,20 +306,20 @@ function UnitFormModal({ unit, form, setForm, error, saving, onCancel, onSubmit 
             />
           </div>
 
-          {error && <p className="text-sm text-fire">{error}</p>}
+          {error && <p role="alert" className="text-sm text-fire">{error}</p>}
         </div>
 
         <div className="flex gap-2 border-t border-border p-4">
           <button
             onClick={onCancel}
-            className="flex-1 rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
+            className={`flex-1 rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink ${focusRing}`}
           >
             Cancel
           </button>
           <button
             onClick={onSubmit}
             disabled={saving}
-            className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60"
+            className={`flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60 ${focusRing}`}
           >
             {saving ? "Saving…" : "Save Changes"}
           </button>
@@ -318,16 +330,15 @@ function UnitFormModal({ unit, form, setForm, error, saving, onCancel, onSubmit 
 }
 
 const statusBadge = (isActive) => (
-  <span
-    className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-      isActive === false
-        ? "border-fire/40 bg-fire/10 text-fire"
-        : "border-white/10 bg-white/5"
-    }`}
-  >
+  <Chip tone={isActive === false ? "danger" : "neutral"}>
     {isActive === false ? "Inactive" : "Active"}
-  </span>
+  </Chip>
 );
+
+// Canonical category color (config.js is the single source of truth)
+// for the table chip — data-driven styling only, never redeclared.
+const categoryColor = (category) =>
+  CATEGORIES[String(category || "").toUpperCase()]?.color;
 
 // Standalone it owns its full-page scroll wrapper; embedded inside
 // Settings it renders just its content (same pattern as
@@ -468,6 +479,31 @@ export default function StationManagement({ embedded = false }) {
 
   const handleSaveStation = async () => {
     setStationModalError(null);
+    // Validation-first: EVERYTHING checkable client-side is checked
+    // here, before the admin-password dialog can open. Each failure
+    // is an inline modal error — the password prompt must never
+    // appear while the input is already known-invalid. The rules
+    // below mirror the backend (services/stationService.js); the
+    // server stays authoritative for anything racier (duplicates).
+    if (stationModal.mode === "add") {
+      const id = stationForm.id.trim();
+      if (!id) {
+        setStationModalError("Please enter a Station ID (3–64 characters: A–Z, 0–9, underscore).");
+        return;
+      }
+      if (!/^[A-Z0-9_]{3,64}$/.test(id)) {
+        setStationModalError("Station IDs use 3–64 characters: A–Z, 0–9, underscore — e.g. MEDICAL_NEW_BASE.");
+        return;
+      }
+    }
+    if (!stationForm.name.trim()) {
+      setStationModalError("Please enter a station name.");
+      return;
+    }
+    if (stationForm.name.trim().length > 120) {
+      setStationModalError("Please keep the station name under 120 characters.");
+      return;
+    }
     const parsed = parseCoords(stationForm);
     if (!parsed.ok) {
       setStationModalError(parsed.error);
@@ -907,7 +943,7 @@ export default function StationManagement({ embedded = false }) {
           </div>
           <button
             onClick={openAddStation}
-            className="rounded-md bg-medical px-3 py-2 text-sm font-semibold text-bg transition-opacity hover:opacity-90"
+            className={`rounded-md bg-medical px-3 py-2 text-sm font-semibold text-bg transition-opacity hover:opacity-90 ${focusRing}`}
           >
             Add Station
           </button>
@@ -915,91 +951,60 @@ export default function StationManagement({ embedded = false }) {
 
         {/* Search + filters — client-side over the loaded list. */}
         {stations.length > 0 && (
-          <div className="mt-4 flex flex-wrap items-end gap-2">
-            <div className="min-w-44 flex-1">
-              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station-search">
-                Search by name
-              </label>
-              <input
-                id="station-search"
-                type="search"
-                placeholder="e.g. River Park…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station-category-filter">
-                Category
-              </label>
-              <select
-                id="station-category-filter"
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="mt-1 rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
-              >
-                <option value="all">All</option>
-                {BACKEND_CATEGORIES.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station-status-filter">
-                Status
-              </label>
-              <select
-                id="station-status-filter"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="mt-1 rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
-              >
-                <option value="all">All</option>
-                <option value="activated">Activated</option>
-                <option value="deactivated">Deactivated</option>
-              </select>
-            </div>
+          <AdminToolbar label="Search & filters">
+            <SearchField
+              id="station-search"
+              label="Search by name"
+              placeholder="e.g. River Park…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <FilterSelect
+              id="station-category-filter"
+              label="Category"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="all">All</option>
+              {BACKEND_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect
+              id="station-status-filter"
+              label="Status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">All</option>
+              <option value="activated">Activated</option>
+              <option value="deactivated">Deactivated</option>
+            </FilterSelect>
             {filtersActive && filteredStations.length > 0 && (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
-              >
-                Reset filters
-              </button>
+              <ResetFiltersButton onClick={resetFilters} />
             )}
-          </div>
+          </AdminToolbar>
+        )}
+        {stations.length > 0 && (
+          <ResultCount shown={filteredStations.length} total={stations.length} noun="station" />
         )}
 
         {/* Bulk action bar — deactivation only; activation stays per-row. */}
         {stations.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-sm text-ink-dim" aria-live="polite">
-              {selectedIds.length === 0
+          <BulkActionBar
+            countText={
+              selectedIds.length === 0
                 ? "No stations selected."
-                : `${selectedIds.length} ${selectedIds.length === 1 ? "station" : "stations"} selected.`}
-            </span>
-            <button
-              type="button"
-              onClick={openBulkDeactivate}
-              disabled={selectedIds.length === 0 || bulkSaving}
-              className="rounded-md border border-fire/40 bg-fire/10 px-3 py-1.5 text-sm font-semibold text-fire transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Deactivate Selected
-            </button>
-            {selectedIds.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSelectedIds([])}
-                className="rounded-md border border-border px-3 py-1.5 text-sm text-ink-dim transition-colors hover:text-ink"
-              >
-                Clear selection
-              </button>
-            )}
-          </div>
+                : `${selectedIds.length} ${selectedIds.length === 1 ? "station" : "stations"} selected.`
+            }
+            actionLabel="Deactivate Selected"
+            onAction={openBulkDeactivate}
+            actionDisabled={selectedIds.length === 0 || bulkSaving}
+            onClear={() => setSelectedIds([])}
+            showClear={selectedIds.length > 0}
+          />
         )}
 
         {bannerOk && (
@@ -1061,14 +1066,14 @@ export default function StationManagement({ embedded = false }) {
         )}
 
         {!loading && !loadError && stations.length > 0 && filteredStations.length === 0 && (
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center" role="status">
             <p className="text-sm text-ink-dim">
               No stations match your search or filters.
             </p>
             <button
               type="button"
               onClick={resetFilters}
-              className="mt-2 rounded-md border border-border px-3 py-1.5 text-sm text-ink-dim transition-colors hover:text-ink"
+              className={`mt-2 rounded-md border border-border px-3 py-1.5 text-sm text-ink-dim transition-colors hover:text-ink ${focusRing}`}
             >
               Reset filters
             </button>
@@ -1080,7 +1085,7 @@ export default function StationManagement({ embedded = false }) {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-dim">
-                  <th className="py-2 pr-3">
+                  <th scope="col" className="py-2 pr-3">
                     <input
                       type="checkbox"
                       aria-label="Select all active stations"
@@ -1094,16 +1099,16 @@ export default function StationManagement({ embedded = false }) {
                       }}
                       onChange={toggleSelectAll}
                       disabled={eligibleFiltered.length === 0}
-                      className="h-4 w-4 accent-[#F97316]"
+                      className={`h-4 w-4 accent-[#F97316] ${focusRing} rounded-sm`}
                     />
                   </th>
-                  <th className="py-2 pr-3">Station</th>
-                  <th className="py-2 pr-3">Category</th>
-                  <th className="py-2 pr-3">Contact</th>
-                  <th className="py-2 pr-3">Turnout</th>
-                  <th className="py-2 pr-3">Units</th>
-                  <th className="py-2 pr-3">Status</th>
-                  <th className="py-2 text-right">Actions</th>
+                  <th scope="col" className="py-2 pr-3">Station</th>
+                  <th scope="col" className="py-2 pr-3">Category</th>
+                  <th scope="col" className="py-2 pr-3">Contact</th>
+                  <th scope="col" className="py-2 pr-3">Turnout</th>
+                  <th scope="col" className="py-2 pr-3">Units</th>
+                  <th scope="col" className="py-2 pr-3">Status</th>
+                  <th scope="col" className="py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1111,7 +1116,10 @@ export default function StationManagement({ embedded = false }) {
                   const units = normalizeUnits(station);
                   const active = station.isActive !== false;
                   return (
-                    <tr key={station.id} className="border-b border-border align-top">
+                    <tr
+                      key={station.id}
+                      className={`border-b border-border align-top ${selectedSet.has(station.id) ? "bg-medical/5" : ""}`}
+                    >
                       <td className="py-2.5 pr-3">
                         {active ? (
                           <input
@@ -1119,7 +1127,7 @@ export default function StationManagement({ embedded = false }) {
                             aria-label={`Select ${station.name}`}
                             checked={selectedSet.has(station.id)}
                             onChange={() => toggleSelect(station.id)}
-                            className="h-4 w-4 accent-[#F97316]"
+                            className={`h-4 w-4 accent-[#F97316] ${focusRing} rounded-sm`}
                           />
                         ) : (
                           <span
@@ -1132,38 +1140,38 @@ export default function StationManagement({ embedded = false }) {
                         <div className="font-medium">{station.name}</div>
                         <div className="font-mono text-xs text-ink-dim">{station.id}</div>
                       </td>
-                      <td className="py-2.5 pr-3">{station.category}</td>
+                      <td className="py-2.5 pr-3">
+                        <Chip style={{ color: categoryColor(station.category) }}>
+                          {station.category}
+                        </Chip>
+                      </td>
                       <td className="py-2.5 pr-3">{station.phone || "—"}</td>
                       <td className="py-2.5 pr-3">{station.estimatedTurnout || "—"}</td>
                       <td className="py-2.5 pr-3">{units.length}</td>
                       <td className="py-2.5 pr-3">{statusBadge(station.isActive)}</td>
                       <td className="py-2.5 text-right">
                         <span className="flex justify-end gap-2">
-                          <button
-                            onClick={() => openEditStation(station)}
-                            className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink"
-                          >
+                          <RowButton onClick={() => openEditStation(station)}>
                             Edit
-                          </button>
+                          </RowButton>
                           {active ? (
-                            <button
+                            <RowButton
                               onClick={() => {
                                 setDeactivateError(null);
                                 setDeactivateTarget(station);
                               }}
                               disabled={pendingToggleId != null}
-                              className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-fire disabled:opacity-60"
+                              danger
                             >
                               Deactivate
-                            </button>
+                            </RowButton>
                           ) : (
-                            <button
+                            <RowButton
                               onClick={() => handleSetStationActive(station, true)}
                               disabled={pendingToggleId != null}
-                              className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink disabled:opacity-60"
                             >
                               Activate
-                            </button>
+                            </RowButton>
                           )}
                         </span>
                       </td>
@@ -1320,7 +1328,7 @@ export default function StationManagement({ embedded = false }) {
                   />
                 </div>
                 {unitAddError && (
-                  <p className="mt-2 text-xs text-fire">{unitAddError}</p>
+                  <p id="unit-add-error" role="alert" className="mt-2 text-xs text-fire">{unitAddError}</p>
                 )}
                 <button
                   onClick={handleAddUnitInline}
