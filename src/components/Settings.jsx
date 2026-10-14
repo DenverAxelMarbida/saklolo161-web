@@ -139,7 +139,7 @@ export default function Settings({ user, onNavigate, initialSection }) {
         {section === "users" && isAdmin && (
           /* Admin only — the EXISTING UserManagement component, inline */
           <div {...panelProps("users")} className="mt-6">
-            <UserManagement embedded />
+            <UserManagement embedded currentUser={user} />
           </div>
         )}
         {section === "stations" && isAdmin && (

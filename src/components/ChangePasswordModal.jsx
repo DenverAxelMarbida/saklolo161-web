@@ -4,9 +4,7 @@ import { isStrongPassword } from "../lib/passwordPolicy";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import PasswordRequirements from "./PasswordRequirements";
 import PasswordInput from "./PasswordInput";
-
-const errorMessage = (err, fallback) =>
-  err?.response?.data?.message || fallback;
+import { errorMessage } from "../lib/errorMessages";
 
 // Self-service password change for any signed-in dispatcher or admin
 // (backend: POST /api/users/me/password — verifyAuth only; the uid
