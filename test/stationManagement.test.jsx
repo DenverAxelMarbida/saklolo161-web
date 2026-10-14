@@ -1127,3 +1127,350 @@ describe("StationManagement — validation runs before reauthentication", () => 
     expect(stationApi.setStationActive).not.toHaveBeenCalled();
   });
 });
+
+describe("StationManagement — unit ID editing stays draft-only until verified save", () => {
+  async function openUnitDialog() {
+    render(<StationManagement embedded />);
+    expect(await screen.findByText("River Park Authority")).toBeTruthy();
+    fireEvent.click(screen.getAllByText("Edit")[0]); // FIRE station row
+    const panel = await screen.findByLabelText(/Assigned units for/);
+    fireEvent.click(within(panel).getAllByText("Edit")[0]); // engine-1 row
+    const unitDialog = screen.getAllByRole("dialog").at(-1);
+    expect(unitDialog.getAttribute("aria-label")).toBe("Edit Unit");
+    return { panel, unitDialog };
+  }
+
+  it("edits Unit ID and Unit Name together in the draft — no API, Unsaved badge", async () => {
+    const { panel, unitDialog } = await openUnitDialog();
+
+    expect(within(unitDialog).getByLabelText("Unit ID").value).toBe("engine-1");
+    expect(within(unitDialog).getByLabelText("Unit Name").value).toBe("BFP Engine Pumper #1");
+
+    fireEvent.change(within(unitDialog).getByLabelText("Unit ID"), {
+      target: { value: "engine-1x" },
+    });
+    fireEvent.change(within(unitDialog).getByLabelText("Unit Name"), {
+      target: { value: "Engine 1X" },
+    });
+    fireEvent.click(within(unitDialog).getByText("Save Changes"));
+
+    // Draft-only: dialog closed, row shows the new values, no request.
+    expect(screen.queryByLabelText("Edit Unit")).toBeNull();
+    expect(within(panel).getByText("Engine 1X")).toBeTruthy();
+    expect(within(panel).getByText("engine-1x")).toBeTruthy();
+    expect(within(panel).getByText("Unsaved")).toBeTruthy();
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+    expect(stationApi.listStations).toHaveBeenCalledTimes(1);
+  });
+
+  it("an unchanged ID is not reported as a duplicate of itself", async () => {
+    const { panel, unitDialog } = await openUnitDialog();
+
+    // Touch the ID field but keep the same value; rename only.
+    fireEvent.change(within(unitDialog).getByLabelText("Unit ID"), {
+      target: { value: "engine-1" },
+    });
+    fireEvent.change(within(unitDialog).getByLabelText("Unit Name"), {
+      target: { value: "Engine Alpha" },
+    });
+    fireEvent.click(within(unitDialog).getByText("Save Changes"));
+
+    expect(screen.queryByLabelText("Edit Unit")).toBeNull();
+    expect(within(panel).getByText("Engine Alpha")).toBeTruthy();
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+  });
+
+  it("a duplicate ID against a sibling unit is rejected inline — draft untouched, no API", async () => {
+    const { panel, unitDialog } = await openUnitDialog();
+
+    fireEvent.change(within(unitDialog).getByLabelText("Unit ID"), {
+      target: { value: "engine-2" }, // the station's other unit
+    });
+
+    expect(
+      await within(unitDialog).findByText('Unit "engine-2" already exists in this station.'),
+    ).toBeTruthy();
+    fireEvent.click(within(unitDialog).getByText("Save Changes"));
+
+    // Still open, draft unchanged, nothing sent.
+    expect(screen.getByLabelText("Edit Unit")).toBeTruthy();
+    expect(within(panel).getByText("BFP Engine Pumper #1")).toBeTruthy();
+    expect(within(panel).queryByText("Unsaved")).toBeNull();
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+  });
+
+  it("invalid IDs are rejected inline — empty, banned characters, too long", async () => {
+    const { unitDialog } = await openUnitDialog();
+    const idInput = within(unitDialog).getByLabelText("Unit ID");
+
+    fireEvent.change(idInput, { target: { value: "bad/id" } });
+    expect(await within(unitDialog).findByText(/must not contain/)).toBeTruthy();
+
+    fireEvent.change(idInput, { target: { value: "" } });
+    expect(await within(unitDialog).findByText("Unit ID is required.")).toBeTruthy();
+
+    fireEvent.change(idInput, { target: { value: "x".repeat(65) } });
+    expect(
+      await within(unitDialog).findByText("Unit ID must be at most 64 characters."),
+    ).toBeTruthy();
+
+    fireEvent.click(within(unitDialog).getByText("Save Changes"));
+    expect(screen.getByLabelText("Edit Unit")).toBeTruthy();
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+  });
+
+  it("canceling the unit dialog discards the ID and name edits", async () => {
+    const { panel, unitDialog } = await openUnitDialog();
+
+    fireEvent.change(within(unitDialog).getByLabelText("Unit ID"), {
+      target: { value: "engine-1x" },
+    });
+    fireEvent.change(within(unitDialog).getByLabelText("Unit Name"), {
+      target: { value: "Engine 1X" },
+    });
+    fireEvent.click(within(unitDialog).getByText("Cancel"));
+
+    expect(screen.queryByLabelText("Edit Unit")).toBeNull();
+    expect(within(panel).getByText("BFP Engine Pumper #1")).toBeTruthy();
+    expect(within(panel).queryByText("Engine 1X")).toBeNull();
+    expect(within(panel).queryByText("Unsaved")).toBeNull();
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+  });
+
+  it("commits an ID change via the existing endpoint addressed by the old ID, after reauth", async () => {
+    stationApi.updateStation.mockResolvedValue({ success: true });
+    stationApi.updateUnit.mockResolvedValue({ success: true });
+    const { unitDialog } = await openUnitDialog();
+
+    fireEvent.change(within(unitDialog).getByLabelText("Unit ID"), {
+      target: { value: "engine-1x" },
+    });
+    fireEvent.change(within(unitDialog).getByLabelText("Unit Name"), {
+      target: { value: "Engine 1X" },
+    });
+    fireEvent.click(within(unitDialog).getByText("Save Changes"));
+
+    fireEvent.click(screen.getByText("Save Changes"));
+    expect(
+      screen.getAllByRole("dialog").at(-1).getAttribute("aria-label"),
+    ).toBe("Verify Admin Password");
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+
+    const verify = screen.getAllByRole("dialog").at(-1);
+    fireEvent.change(within(verify).getByLabelText("Your Current Password"), {
+      target: { value: "AdminPass!xK9pQ2" },
+    });
+    fireEvent.click(within(verify).getByText("Save Changes"));
+
+    await waitFor(() =>
+      expect(stationApi.updateUnit).toHaveBeenCalledWith("FIRE_BFP_MAIN_STATION", "engine-1", {
+        id: "engine-1x",
+        name: "Engine 1X",
+      }),
+    );
+    expect(await screen.findByText("Station updated.")).toBeTruthy();
+    // Success closes the modal and clears the draft.
+    expect(screen.queryByLabelText("Edit Station")).toBeNull();
+    expect(screen.queryByLabelText("Verify Admin Password")).toBeNull();
+  });
+
+  it("a pending ID edit never misaddresses the immediate unit toggle — the server ID is used", async () => {
+    stationApi.setUnitActive.mockResolvedValue({ success: true });
+    const { panel, unitDialog } = await openUnitDialog();
+
+    // Draft-only ID change, NOT saved to the server.
+    fireEvent.change(within(unitDialog).getByLabelText("Unit ID"), {
+      target: { value: "engine-1x" },
+    });
+    fireEvent.click(within(unitDialog).getByText("Save Changes"));
+
+    // Immediate deactivate must address the unit the server knows.
+    fireEvent.click(within(panel).getByText("Deactivate"));
+    fireEvent.click(within(panel).getByText("Confirm deactivate"));
+
+    await waitFor(() =>
+      expect(stationApi.setUnitActive).toHaveBeenCalledWith(
+        "FIRE_BFP_MAIN_STATION",
+        "engine-1",
+        false,
+      ),
+    );
+  });
+
+  it("a server-side ID conflict on commit reports accurately with no false success", async () => {
+    stationApi.updateStation.mockResolvedValue({ success: true });
+    stationApi.updateUnit.mockRejectedValueOnce({
+      response: { data: { message: 'Unit "engine-1x" already exists in station FIRE_BFP_MAIN_STATION.' } },
+    });
+    const refreshed = structuredClone(STATIONS);
+    stationApi.listStations.mockResolvedValueOnce(refreshed);
+
+    const { panel, unitDialog } = await openUnitDialog();
+    fireEvent.change(within(unitDialog).getByLabelText("Unit ID"), {
+      target: { value: "engine-1x" },
+    });
+    fireEvent.click(within(unitDialog).getByText("Save Changes"));
+
+    fireEvent.click(screen.getByText("Save Changes"));
+    const verify = screen.getAllByRole("dialog").at(-1);
+    fireEvent.change(within(verify).getByLabelText("Your Current Password"), {
+      target: { value: "AdminPass!xK9pQ2" },
+    });
+    fireEvent.click(within(verify).getByText("Save Changes"));
+
+    // Accurate partial report — modal stays open, no success banner,
+    // and the intended change is still pending for a corrected retry.
+    expect(
+      (await screen.findAllByText(/some unit changes failed/i)).length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("Station updated.")).toBeNull();
+    expect(screen.getByLabelText("Edit Station")).toBeTruthy();
+    expect(within(panel).getByText("engine-1x")).toBeTruthy();
+    expect(within(panel).getByText("Unsaved")).toBeTruthy();
+  });
+});
+
+describe("StationManagement — real-time field validation without premature errors", () => {
+  const openAddStation = async () => {
+    render(<StationManagement embedded />);
+    await screen.findByText("River Park Authority");
+    fireEvent.click(screen.getByText("Add Station"));
+    return screen.getByLabelText("Add Station");
+  };
+
+  const modalAlerts = () => {
+    const modal = screen.getByLabelText("Add Station");
+    return within(modal).queryAllByRole("alert");
+  };
+
+  it("untouched fields show no errors when the form first opens", async () => {
+    await openAddStation();
+
+    expect(modalAlerts()).toHaveLength(0);
+    expect(screen.queryByLabelText("Verify Admin Password")).toBeNull();
+  });
+
+  it("an invalid value shows inline feedback as it is typed, and clears when fixed", async () => {
+    await openAddStation();
+
+    // A non-empty invalid value is flagged live — no submit needed.
+    fireEvent.change(screen.getByLabelText("Longitude"), { target: { value: "121.1029" } });
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "abc" } });
+    expect(
+      await screen.findByText("Coordinates must be numbers (e.g. 14.6507, 121.1029)."),
+    ).toBeTruthy();
+
+    // Fixing the value clears the error immediately — no submit needed.
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "14.63" } });
+    expect(
+      screen.queryByText("Coordinates must be numbers (e.g. 14.6507, 121.1029)."),
+    ).toBeNull();
+    expect(modalAlerts()).toHaveLength(0);
+  });
+
+  it("temporarily clearing a field stays quiet until blur or submit", async () => {
+    await openAddStation();
+
+    // Type then clear — no disruptive error on the intermediate empty state.
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Test" } });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "" } });
+    expect(modalAlerts()).toHaveLength(0);
+
+    // Blur surfaces it; typing a valid value clears it again.
+    fireEvent.blur(screen.getByLabelText("Name"));
+    expect(await screen.findByText("Please enter a station name.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Test Base" } });
+    expect(screen.queryByText("Please enter a station name.")).toBeNull();
+  });
+
+  it("blurring an empty required field shows its error", async () => {
+    await openAddStation();
+
+    fireEvent.blur(screen.getByLabelText("Name"));
+    expect(await screen.findByText("Please enter a station name.")).toBeTruthy();
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+  });
+
+  it("an invalid contact number is flagged inline and blocks verification", async () => {
+    const modal = await openAddStation();
+    fireEvent.change(within(modal).getByLabelText("Station ID"), {
+      target: { value: "MEDICAL_TEST_BASE" },
+    });
+    fireEvent.change(within(modal).getByLabelText("Name"), {
+      target: { value: "Test Medical Base" },
+    });
+    fireEvent.change(within(modal).getByLabelText("Contact Number"), {
+      target: { value: "!!!" },
+    });
+
+    expect(await screen.findByText("Please enter a valid contact number.")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Create Station"));
+    expect(await screen.findByText("Please review the highlighted fields below and try again.")).toBeTruthy();
+    expect(screen.queryByLabelText("Verify Admin Password")).toBeNull();
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+  });
+
+  it("a duplicate Station ID is caught client-side before reauthentication", async () => {
+    const modal = await openAddStation();
+    fireEvent.change(within(modal).getByLabelText("Station ID"), {
+      target: { value: "FIRE_BFP_MAIN_STATION" }, // already in the loaded list
+    });
+    fireEvent.change(within(modal).getByLabelText("Name"), {
+      target: { value: "Test Medical Base" },
+    });
+
+    expect(
+      await screen.findByText("A station with this ID already exists. Please use a different Station ID."),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Create Station"));
+    expect(screen.queryByLabelText("Verify Admin Password")).toBeNull();
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+  });
+
+  it("Save revalidates untouched fields and never duplicates a message", async () => {
+    await openAddStation();
+    // Name left empty and untouched — Save surfaces it once, inline.
+    fireEvent.change(screen.getByLabelText("Station ID"), {
+      target: { value: "MEDICAL_TEST_BASE" },
+    });
+
+    fireEvent.click(screen.getByText("Create Station"));
+
+    const matches = await screen.findAllByText("Please enter a station name.");
+    expect(matches).toHaveLength(1);
+    expect(screen.queryByLabelText("Verify Admin Password")).toBeNull();
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+  });
+
+  it("the unit dialog validates live: untouched is clean, invalid shows, valid clears", async () => {
+    render(<StationManagement embedded />);
+    expect(await screen.findByText("River Park Authority")).toBeTruthy();
+    fireEvent.click(screen.getAllByText("Edit")[0]);
+    const panel = await screen.findByLabelText(/Assigned units for/);
+    fireEvent.click(within(panel).getAllByText("Edit")[0]);
+    const unitDialog = screen.getAllByRole("dialog").at(-1);
+
+    // Pristine dialog: no errors.
+    expect(within(unitDialog).queryAllByRole("alert")).toHaveLength(0);
+
+    // Invalid ID shows inline as typed.
+    fireEvent.change(within(unitDialog).getByLabelText("Unit ID"), {
+      target: { value: "engine-2" },
+    });
+    expect(
+      await within(unitDialog).findByText('Unit "engine-2" already exists in this station.'),
+    ).toBeTruthy();
+
+    // Fixing it clears the error with no submit.
+    fireEvent.change(within(unitDialog).getByLabelText("Unit ID"), {
+      target: { value: "engine-1" },
+    });
+    expect(
+      within(unitDialog).queryByText('Unit "engine-2" already exists in this station.'),
+    ).toBeNull();
+    expect(within(unitDialog).queryAllByRole("alert")).toHaveLength(0);
+  });
+});
