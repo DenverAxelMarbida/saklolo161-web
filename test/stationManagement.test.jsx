@@ -103,6 +103,15 @@ describe("StationManagement — station add/edit/activate", () => {
     fireEvent.change(within(modal).getByLabelText("Category"), {
       target: { value: "Medical" },
     });
+    fireEvent.change(within(modal).getByLabelText("Latitude"), {
+      target: { value: "14.65" },
+    });
+    fireEvent.change(within(modal).getByLabelText("Longitude"), {
+      target: { value: "121.1" },
+    });
+    fireEvent.change(within(modal).getByLabelText("Estimated Turnout"), {
+      target: { value: "5 mins" },
+    });
   }
 
   it("the Add Station modal contains an Assigned Units section with a draft add form", async () => {
@@ -207,8 +216,8 @@ describe("StationManagement — station add/edit/activate", () => {
       name: "Test Medical Base",
       category: "Medical",
       phone: "",
-      coords: null,
-      estimatedTurnout: "",
+      coords: { lat: 14.65, lng: 121.1 },
+      estimatedTurnout: "5 mins",
       assignedUnits: [{ id: "amb-1", name: "Ambulance 1" }],
       adminPassword: "AdminPass!xK9pQ2",
     });
@@ -1472,5 +1481,174 @@ describe("StationManagement — real-time field validation without premature err
       within(unitDialog).queryByText('Unit "engine-2" already exists in this station.'),
     ).toBeNull();
     expect(within(unitDialog).queryAllByRole("alert")).toHaveLength(0);
+  });
+});
+
+describe("StationManagement — creation requires coordinates + estimated turnout", () => {
+  const VALID = {
+    id: "MEDICAL_TEST_BASE",
+    name: "Test Medical Base",
+    lat: "14.65",
+    lng: "121.1",
+    turnout: "5 mins",
+  };
+
+  const openAdd = async () => {
+    render(<StationManagement embedded />);
+    await screen.findByText("River Park Authority");
+    fireEvent.click(screen.getByText("Add Station"));
+    return screen.getByLabelText("Add Station");
+  };
+
+  const fillAddForm = (modal, overrides = {}) => {
+    const v = { ...VALID, ...overrides };
+    fireEvent.change(within(modal).getByLabelText("Station ID"), {
+      target: { value: v.id },
+    });
+    fireEvent.change(within(modal).getByLabelText("Name"), {
+      target: { value: v.name },
+    });
+    fireEvent.change(within(modal).getByLabelText("Latitude"), {
+      target: { value: v.lat },
+    });
+    fireEvent.change(within(modal).getByLabelText("Longitude"), {
+      target: { value: v.lng },
+    });
+    fireEvent.change(within(modal).getByLabelText("Estimated Turnout"), {
+      target: { value: v.turnout },
+    });
+  };
+
+  const addDraftUnit = () => {
+    const panel = screen.getByLabelText(/Assigned units for new station/);
+    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
+      target: { value: "amb-1" },
+    });
+    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
+      target: { value: "Ambulance 1" },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
+  };
+
+  const expectBlocked = async (errorText) => {
+    fireEvent.click(screen.getByText("Create Station"));
+    expect(await screen.findByText(errorText)).toBeTruthy();
+    expect(screen.getByLabelText("Add Station")).toBeTruthy();
+    expect(screen.queryByLabelText("Verify Admin Password")).toBeNull();
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+  };
+
+  it("missing latitude blocks creation with an inline error", async () => {
+    const modal = await openAdd();
+    fillAddForm(modal, { lat: "" });
+    addDraftUnit();
+    await expectBlocked("Please enter the station's latitude.");
+  });
+
+  it("missing longitude blocks creation with an inline error", async () => {
+    const modal = await openAdd();
+    fillAddForm(modal, { lng: "" });
+    addDraftUnit();
+    await expectBlocked("Please enter the station's longitude.");
+  });
+
+  it("missing estimated turnout blocks creation with an inline error", async () => {
+    const modal = await openAdd();
+    fillAddForm(modal, { turnout: "" });
+    addDraftUnit();
+    await expectBlocked("Please enter the estimated turnout time.");
+  });
+
+  it("whitespace-only values block creation", async () => {
+    const modal = await openAdd();
+    fillAddForm(modal, { lat: "   ", lng: "  ", turnout: "  " });
+    addDraftUnit();
+
+    fireEvent.click(screen.getByText("Create Station"));
+    expect(await screen.findByText("Please enter the station's latitude.")).toBeTruthy();
+    expect(screen.getByText("Please enter the station's longitude.")).toBeTruthy();
+    expect(screen.getByText("Please enter the estimated turnout time.")).toBeTruthy();
+    expect(screen.queryByLabelText("Verify Admin Password")).toBeNull();
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+  });
+
+  it("out-of-range coordinates block creation", async () => {
+    const modal = await openAdd();
+    fillAddForm(modal, { lat: "91", lng: "-181" });
+    addDraftUnit();
+
+    fireEvent.click(screen.getByText("Create Station"));
+    expect(await screen.findByText("Please enter a latitude between -90 and 90.")).toBeTruthy();
+    expect(screen.getByText("Please enter a longitude between -180 and 180.")).toBeTruthy();
+    expect(screen.queryByLabelText("Verify Admin Password")).toBeNull();
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+  });
+
+  it("genuine zero coordinates are accepted and flow through verification", async () => {
+    stationApi.createStation.mockResolvedValue({ success: true });
+    const modal = await openAdd();
+    fillAddForm(modal, { lat: "0", lng: "0" });
+    addDraftUnit();
+
+    // No errors — the password dialog opens.
+    fireEvent.click(screen.getByText("Create Station"));
+    const verify = screen.getAllByRole("dialog").at(-1);
+    expect(verify.getAttribute("aria-label")).toBe("Verify Admin Password");
+
+    fireEvent.change(within(verify).getByLabelText("Your Current Password"), {
+      target: { value: "AdminPass!xK9pQ2" },
+    });
+    fireEvent.click(within(verify).getByText("Create Station"));
+
+    await waitFor(() =>
+      expect(stationApi.createStation).toHaveBeenCalledWith(
+        expect.objectContaining({ coords: { lat: 0, lng: 0 } }),
+      ),
+    );
+    expect(await screen.findByText("Station created.")).toBeTruthy();
+  });
+
+  it("form values are preserved when validation errors appear", async () => {
+    const modal = await openAdd();
+    fillAddForm(modal, { lat: "" });
+    addDraftUnit();
+
+    fireEvent.click(screen.getByText("Create Station"));
+    expect(await screen.findByText("Please enter the station's latitude.")).toBeTruthy();
+
+    expect(within(modal).getByLabelText("Name").value).toBe("Test Medical Base");
+    expect(within(modal).getByLabelText("Longitude").value).toBe("121.1");
+    expect(within(modal).getByLabelText("Estimated Turnout").value).toBe("5 mins");
+  });
+
+  it("marks required fields in add mode only — edit keeps location/turnout optional", async () => {
+    const modal = await openAdd();
+    // ID, Name, Latitude, Longitude, Estimated Turnout.
+    expect(within(modal).getAllByText("(required)")).toHaveLength(5);
+    fireEvent.click(within(modal).getByText("Cancel"));
+
+    fireEvent.click(screen.getAllByText("Edit")[0]);
+    const editModal = await screen.findByLabelText("Edit Station");
+    // Only Name is required when editing.
+    expect(within(editModal).getAllByText("(required)")).toHaveLength(1);
+  });
+
+  it("editing without touching location/turnout still verifies and saves", async () => {
+    stationApi.updateStation.mockResolvedValue({ success: true });
+    render(<StationManagement embedded />);
+    expect(await screen.findByText("River Park Authority")).toBeTruthy();
+
+    // River Park fixture has coords; clear turnout only (optional on edit).
+    fireEvent.click(screen.getAllByText("Edit")[1]);
+    const editModal = screen.getByLabelText("Edit Station");
+    fireEvent.change(within(editModal).getByLabelText("Estimated Turnout"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByText("Save Changes"));
+
+    expect(
+      screen.getAllByRole("dialog").at(-1).getAttribute("aria-label"),
+    ).toBe("Verify Admin Password");
+    expect(stationApi.updateStation).not.toHaveBeenCalled();
   });
 });
