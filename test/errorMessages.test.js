@@ -54,6 +54,15 @@ describe("friendlyErrorMessage", () => {
     );
   });
 
+  it("translates missing-coordinates and missing-turnout creation failures", () => {
+    expect(
+      friendlyErrorMessage(server("Validation failed: coords is required ({ lat, lng }).")),
+    ).toBe("Please enter the station's latitude and longitude.");
+    expect(
+      friendlyErrorMessage(server("Validation failed: estimatedTurnout is required and must be a non-empty string.")),
+    ).toBe("Please enter the estimated turnout time.");
+  });
+
   it("translates HTTP statuses without leaking Axios codes", () => {
     expect(friendlyErrorMessage({ response: { status: 401, data: {} } })).toBe(
       "Your session may have expired. Please sign in again.",

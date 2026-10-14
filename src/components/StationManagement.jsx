@@ -58,6 +58,13 @@ const validateUnitDraft = (draft) => {
     } else if (entry.name.trim().length > 120) {
       errors.push(`${label}: name must be at most 120 characters.`);
     }
+    // Id rules apply to pending adds and to CHANGED ids only — an
+    // unchanged legacy id (e.g. "Rescue Boat Unit #1") passes through
+    // exactly like the backend's rename path, which never revalidates
+    // an id it wasn't asked to change. Otherwise older stations could
+    // never be saved again.
+    const idChanged = entry.isNew || entry.id !== entry.origId;
+    if (!idChanged) continue;
     if (!entry.id) {
       errors.push(
         entry.isNew ? "New unit: ID is required." : `${label}: ID is required.`,
@@ -86,6 +93,14 @@ const validateUnitDraft = (draft) => {
 // validatePhone). Pure + total: every key is always present (""
 // when valid) so the modal can render inline errors live. Category
 // comes from a fixed select, so it needs no validation.
+//
+// Create vs edit split (mirrors the backend exactly): latitude,
+// longitude, and estimated turnout are REQUIRED on create (a station
+// without a location or turnout estimate cannot dispatch) but stay
+// optional-but-validated on edit, where PATCH omits unchanged fields
+// and older records may predate the requirement. Genuine zeros are
+// valid coordinates (string-emptiness checks, never falsy traps);
+// range limits equal the backend's (lat -90..90, lng -180..180).
 const validateStationFields = (form, mode, stations) => {
   const errors = { id: "", name: "", phone: "", lat: "", lng: "", turnout: "" };
   if (mode === "add") {
@@ -112,21 +127,36 @@ const validateStationFields = (form, mode, stations) => {
   }
   const latEmpty = String(form.lat).trim() === "";
   const lngEmpty = String(form.lng).trim() === "";
-  if (!latEmpty || !lngEmpty) {
+  const checkRange = (raw, which) => {
+    const value = Number(raw);
+    if (!Number.isFinite(value)) {
+      return "Coordinates must be numbers (e.g. 14.6507, 121.1029).";
+    }
+    if (which === "lat" && (value < -90 || value > 90)) {
+      return "Please enter a latitude between -90 and 90.";
+    }
+    if (which === "lng" && (value < -180 || value > 180)) {
+      return "Please enter a longitude between -180 and 180.";
+    }
+    return "";
+  };
+  if (mode === "add") {
+    errors.lat = latEmpty ? "Please enter the station's latitude." : checkRange(form.lat, "lat");
+    errors.lng = lngEmpty ? "Please enter the station's longitude." : checkRange(form.lng, "lng");
+  } else if (!latEmpty || !lngEmpty) {
     if (latEmpty || lngEmpty) {
       const both = "Enter both latitude and longitude, or leave both blank.";
       if (latEmpty) errors.lat = both;
       if (lngEmpty) errors.lng = both;
     } else {
-      if (!Number.isFinite(Number(form.lat))) {
-        errors.lat = "Coordinates must be numbers (e.g. 14.6507, 121.1029).";
-      }
-      if (!Number.isFinite(Number(form.lng))) {
-        errors.lng = "Coordinates must be numbers (e.g. 14.6507, 121.1029).";
-      }
+      errors.lat = checkRange(form.lat, "lat");
+      errors.lng = checkRange(form.lng, "lng");
     }
   }
-  if (form.estimatedTurnout.trim().length > 64) {
+  const turnout = form.estimatedTurnout.trim();
+  if (mode === "add" && !turnout) {
+    errors.turnout = "Please enter the estimated turnout time.";
+  } else if (turnout.length > 64) {
     errors.turnout = "Please keep the estimated turnout under 64 characters.";
   }
   return errors;
@@ -140,14 +170,20 @@ const validateStationFields = (form, mode, stations) => {
 const validateUnitDialog = (form, initialId, otherIds) => {
   const errors = { id: "", name: "" };
   const id = form.id.trim();
-  if (!id) {
-    errors.id = "Unit ID is required.";
-  } else if (id.length > 64) {
-    errors.id = "Unit ID must be at most 64 characters.";
-  } else if (/[.#$[\]/]/.test(id)) {
-    errors.id = "Unit ID must not contain . # $ [ ] / characters.";
-  } else if (id !== initialId && otherIds.includes(id)) {
-    errors.id = `Unit "${id}" already exists in this station.`;
+  // An unchanged id is never revalidated (legacy ids may predate the
+  // character rules — the backend's rename path likewise only checks
+  // an id it was asked to change). This also guarantees an unchanged
+  // id is never reported as a duplicate of itself.
+  if (id !== initialId) {
+    if (!id) {
+      errors.id = "Unit ID is required.";
+    } else if (id.length > 64) {
+      errors.id = "Unit ID must be at most 64 characters.";
+    } else if (/[.#$[\]/]/.test(id)) {
+      errors.id = "Unit ID must not contain . # $ [ ] / characters.";
+    } else if (otherIds.includes(id)) {
+      errors.id = `Unit "${id}" already exists in this station.`;
+    }
   }
   const name = form.name.trim();
   if (!name) {
@@ -187,6 +223,19 @@ function FieldError({ id, message }) {
     <p id={id} role="alert" className="mt-1 text-xs text-fire">
       {message}
     </p>
+  );
+}
+
+// "(required)" hint placed AFTER the label element (never inside it,
+// so label text — and every getByLabelText query — stays exact).
+// Shown only for fields required in the current mode (create requires
+// location + turnout; edit leaves them optional). Inputs additionally
+// carry aria-required for assistive technology.
+function ReqMark() {
+  return (
+    <span aria-hidden="true" className="ml-1 text-[10px] uppercase tracking-wide text-ink-dim">
+      (required)
+    </span>
   );
 }
 
@@ -239,6 +288,7 @@ function StationFormModal({ mode, form, setForm, fieldErrors, touched, onTouch, 
               <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station-id">
                 Station ID
               </label>
+              <ReqMark />
               <input
                 id="station-id"
                 type="text"
@@ -261,6 +311,7 @@ function StationFormModal({ mode, form, setForm, fieldErrors, touched, onTouch, 
             <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station-name">
               Name
             </label>
+            <ReqMark />
             <input
               id="station-name"
               type="text"
@@ -313,6 +364,7 @@ function StationFormModal({ mode, form, setForm, fieldErrors, touched, onTouch, 
               <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station-lat">
                 Latitude
               </label>
+              {isAdd && <ReqMark />}
               <input
                 id="station-lat"
                 type="text"
@@ -321,6 +373,7 @@ function StationFormModal({ mode, form, setForm, fieldErrors, touched, onTouch, 
                 value={form.lat}
                 onChange={(e) => setForm({ ...form, lat: e.target.value })}
                 onBlur={() => onTouch("lat")}
+                aria-required={isAdd}
                 aria-describedby={show("lat", form.lat) ? "station-lat-error" : undefined}
                 className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
               />
@@ -330,6 +383,7 @@ function StationFormModal({ mode, form, setForm, fieldErrors, touched, onTouch, 
               <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station-lng">
                 Longitude
               </label>
+              {isAdd && <ReqMark />}
               <input
                 id="station-lng"
                 type="text"
@@ -338,6 +392,7 @@ function StationFormModal({ mode, form, setForm, fieldErrors, touched, onTouch, 
                 value={form.lng}
                 onChange={(e) => setForm({ ...form, lng: e.target.value })}
                 onBlur={() => onTouch("lng")}
+                aria-required={isAdd}
                 aria-describedby={show("lng", form.lng) ? "station-lng-error" : undefined}
                 className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
               />
@@ -349,6 +404,7 @@ function StationFormModal({ mode, form, setForm, fieldErrors, touched, onTouch, 
             <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station-turnout">
               Estimated Turnout
             </label>
+            {isAdd && <ReqMark />}
             <input
               id="station-turnout"
               type="text"
@@ -356,6 +412,7 @@ function StationFormModal({ mode, form, setForm, fieldErrors, touched, onTouch, 
               value={form.estimatedTurnout}
               onChange={(e) => setForm({ ...form, estimatedTurnout: e.target.value })}
               onBlur={() => onTouch("turnout")}
+              aria-required={isAdd}
               aria-describedby={show("turnout", form.estimatedTurnout) ? "station-turnout-error" : undefined}
               className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
             />

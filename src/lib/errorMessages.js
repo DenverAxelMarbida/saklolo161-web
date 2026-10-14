@@ -47,6 +47,9 @@ function rewriteServerMessage(raw) {
   }
 
   // --- Station coordinates (never "coords.lat"/"coords.long") -------
+  if (lower.includes("coords is required")) {
+    return "Please enter the station's latitude and longitude.";
+  }
   if (lower.includes("coords.lat")) {
     return "Please enter the station's latitude as a number between -90 and 90.";
   }
@@ -91,6 +94,9 @@ function rewriteServerMessage(raw) {
   }
   if (lower.includes("phone")) {
     return "Please enter a valid contact number (digits, spaces, +, -, and parentheses only).";
+  }
+  if (lower.includes("estimatedturnout is required") || lower.includes("estimatedturnout must be a non-empty")) {
+    return "Please enter the estimated turnout time.";
   }
   if (lower.includes("estimatedturnout")) {
     return "Please keep the estimated turnout under 64 characters.";
