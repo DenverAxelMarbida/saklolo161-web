@@ -80,11 +80,17 @@ describe("StationManagement — listing", () => {
 });
 
 describe("StationManagement — station add/edit/activate", () => {
-  it("creates a station through the Add Station modal (no reauth on create)", async () => {
-    stationApi.createStation.mockResolvedValue({ success: true });
+  async function verifyAndConfirm(password, confirmLabel = "Save Changes") {
+    const verify = screen.getAllByRole("dialog").at(-1);
+    fireEvent.change(within(verify).getByLabelText("Your Current Password"), {
+      target: { value: password },
+    });
+    fireEvent.click(within(verify).getByText(confirmLabel));
+  }
+
+  async function openAddStationFilled() {
     render(<StationManagement embedded />);
     expect(await screen.findByText("River Park Authority")).toBeTruthy();
-
     fireEvent.click(screen.getByText("Add Station"));
     fireEvent.change(screen.getByLabelText("Station ID"), {
       target: { value: "MEDICAL_TEST_BASE" },
@@ -95,7 +101,103 @@ describe("StationManagement — station add/edit/activate", () => {
     fireEvent.change(screen.getByLabelText("Category"), {
       target: { value: "Medical" },
     });
+  }
+
+  it("the Add Station modal contains an Assigned Units section with a draft add form", async () => {
+    await openAddStationFilled();
+
+    const panel = screen.getByLabelText(/Assigned units for new station/);
+    expect(within(panel).getByLabelText("New Unit ID")).toBeTruthy();
+    expect(within(panel).getByLabelText("New Unit Name")).toBeTruthy();
+    expect(within(panel).getByRole("button", { name: "Add Unit" }).disabled).toBe(true);
+  });
+
+  it("rejects creation with zero assigned units — modal stays open, no API", async () => {
+    await openAddStationFilled();
+
     fireEvent.click(screen.getByText("Create Station"));
+
+    expect(
+      await screen.findByText("Add at least one assigned unit before creating the station."),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Add Station")).toBeTruthy(); // still open
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+    // Not even the password prompt yet — validation runs first.
+    expect(screen.queryByLabelText("Verify Admin Password")).toBeNull();
+  });
+
+  it("adds initial units to the draft only — no mutation request", async () => {
+    await openAddStationFilled();
+    const panel = screen.getByLabelText(/Assigned units for new station/);
+
+    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
+      target: { value: "amb-1" },
+    });
+    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
+      target: { value: "Ambulance 1" },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
+
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+    expect(within(panel).getByText("Ambulance 1")).toBeTruthy();
+    expect(within(panel).getByText("New")).toBeTruthy();
+  });
+
+  it("rejects duplicate or invalid unit ids in the creation draft", async () => {
+    await openAddStationFilled();
+    const panel = screen.getByLabelText(/Assigned units for new station/);
+
+    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
+      target: { value: "bad/id" },
+    });
+    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
+      target: { value: "Broken" },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
+    expect(await screen.findByText(/must not contain/)).toBeTruthy();
+    expect(within(panel).queryByText("Broken")).toBeNull();
+
+    // Valid add, then a duplicate id attempt.
+    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
+      target: { value: "amb-1" },
+    });
+    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
+      target: { value: "Ambulance 1" },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
+    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
+      target: { value: "amb-1" },
+    });
+    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
+      target: { value: "Impostor" },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
+    expect(await screen.findByText(/already exists in this station/)).toBeTruthy();
+    expect(within(panel).queryByText("Impostor")).toBeNull();
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+  });
+
+  it("creating a station asks for the admin password and sends ONE request with units + password", async () => {
+    stationApi.createStation.mockResolvedValue({ success: true });
+    await openAddStationFilled();
+    const panel = screen.getByLabelText(/Assigned units for new station/);
+
+    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
+      target: { value: "amb-1" },
+    });
+    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
+      target: { value: "Ambulance 1" },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
+
+    fireEvent.click(screen.getByText("Create Station"));
+    // Verification opens before ANY request.
+    const verify = screen.getAllByRole("dialog").at(-1);
+    expect(verify.getAttribute("aria-label")).toBe("Verify Admin Password");
+    expect(verify.textContent).toContain("Confirm Station Creation");
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+
+    await verifyAndConfirm("AdminPass!xK9pQ2", "Create Station");
 
     await waitFor(() => expect(stationApi.createStation).toHaveBeenCalledTimes(1));
     expect(stationApi.createStation).toHaveBeenCalledWith({
@@ -105,23 +207,85 @@ describe("StationManagement — station add/edit/activate", () => {
       phone: "",
       coords: null,
       estimatedTurnout: "",
+      assignedUnits: [{ id: "amb-1", name: "Ambulance 1" }],
+      adminPassword: "AdminPass!xK9pQ2",
     });
     expect(await screen.findByText("Station created.")).toBeTruthy();
+    expect(screen.queryByLabelText("Add Station")).toBeNull();
+    // Data refreshed after success.
+    expect(stationApi.listStations).toHaveBeenCalledTimes(2);
   });
 
-  it("surfaces backend validation errors inside the modal", async () => {
+  it("canceling the password prompt creates neither a station nor any units", async () => {
+    await openAddStationFilled();
+    const panel = screen.getByLabelText(/Assigned units for new station/);
+    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
+      target: { value: "amb-1" },
+    });
+    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
+      target: { value: "Ambulance 1" },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
+
+    fireEvent.click(screen.getByText("Create Station"));
+    const verify = screen.getAllByRole("dialog").at(-1);
+    fireEvent.click(within(verify).getByText("Cancel"));
+
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Add Station")).toBeTruthy();
+    // Draft intact for a corrected retry.
+    expect(within(panel).getByText("Ambulance 1")).toBeTruthy();
+  });
+
+  it("incorrect admin credentials create neither a station nor any units", async () => {
+    stationApi.createStation.mockRejectedValueOnce({
+      response: { data: { message: "Administrator password is incorrect." } },
+    });
+    await openAddStationFilled();
+    const panel = screen.getByLabelText(/Assigned units for new station/);
+    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
+      target: { value: "amb-1" },
+    });
+    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
+      target: { value: "Ambulance 1" },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
+
+    fireEvent.click(screen.getByText("Create Station"));
+    await verifyAndConfirm("WrongPass!123", "Create Station");
+
+    expect(
+      await screen.findByText("Administrator password is incorrect."),
+    ).toBeTruthy();
+    // Single request attempted and rejected — nothing persisted,
+    // verify dialog stays for a corrected retry.
+    expect(stationApi.createStation).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Station created.")).toBeNull();
+    expect(
+      screen.getAllByRole("dialog").at(-1).getAttribute("aria-label"),
+    ).toBe("Verify Admin Password");
+  });
+
+  it("surfaces backend validation errors inside the verification dialog without closing the modal", async () => {
     stationApi.createStation.mockRejectedValueOnce({
       response: { data: { message: "Station X already exists." } },
     });
-    render(<StationManagement embedded />);
-    expect(await screen.findByText("River Park Authority")).toBeTruthy();
+    await openAddStationFilled();
+    const panel = screen.getByLabelText(/Assigned units for new station/);
+    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
+      target: { value: "amb-1" },
+    });
+    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
+      target: { value: "Ambulance 1" },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
 
-    fireEvent.click(screen.getByText("Add Station"));
-    fireEvent.change(screen.getByLabelText("Station ID"), { target: { value: "X" } });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "X Station" } });
     fireEvent.click(screen.getByText("Create Station"));
+    await verifyAndConfirm("AdminPass!xK9pQ2", "Create Station");
 
     expect(await screen.findByText("Station X already exists.")).toBeTruthy();
+    expect(screen.queryByText("Station created.")).toBeNull();
+    expect(stationApi.createStation).toHaveBeenCalledTimes(1);
   });
 
   it("sends a station edit only after the admin re-proves their OWN password", async () => {

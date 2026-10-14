@@ -344,8 +344,9 @@ export default function StationManagement({ embedded = false }) {
   const [stationForm, setStationForm] = useState(emptyStationForm());
   const [stationModalError, setStationModalError] = useState(null);
   const [savingStation, setSavingStation] = useState(false);
-  // Edit-mode admin reauthentication (the actual update only runs
-  // from this verification step — see commitStationEdit).
+  // Edit-/create-mode admin reauthentication (the actual create or
+  // update only runs from this verification step — see
+  // commitCreateStation / commitStationEdit).
   const [verifyingStationEdit, setVerifyingStationEdit] = useState(false);
   const [stationVerifyError, setStationVerifyError] = useState(null);
   // Deactivation runs through its own admin-verification dialog
@@ -402,6 +403,12 @@ export default function StationManagement({ embedded = false }) {
   const openAddStation = () => {
     setStationForm(emptyStationForm());
     setStationModalError(null);
+    // Creation carries initial units too — start from an empty draft
+    // (all entries will be pending adds, committed by the single
+    // Create Station action after admin reauthentication).
+    setUnitDraft([]);
+    setNewUnitForm({ id: "", name: "" });
+    setUnitAddError(null);
     setStationModal({ mode: "add" });
   };
 
@@ -447,41 +454,70 @@ export default function StationManagement({ embedded = false }) {
       setStationModalError(parsed.error);
       return;
     }
-    if (stationModal.mode === "add") {
-      setSavingStation(true);
-      try {
-        await createStation({
-          id: stationForm.id.trim(),
-          name: stationForm.name.trim(),
-          category: stationForm.category,
-          phone: stationForm.phone,
-          coords: parsed.coords,
-          estimatedTurnout: stationForm.estimatedTurnout,
-        });
-        flashOk("Station created.");
-        setStationModal(null);
-        await load();
-      } catch (err) {
-        setStationModalError(
-          errorMessage(err, "Couldn't create the station. Try again."),
-        );
-      } finally {
-        setSavingStation(false);
-      }
-      return;
-    }
-    // Edit of an EXISTING station: validate station fields AND the
-    // pending unit draft, then open the admin-password verification
-    // step. Nothing is sent yet — commitStationEdit only runs after
-    // the admin re-proves their OWN password, and the backend
-    // re-verifies it server-side before applying anything.
+    // Shared preflight for add AND edit: station fields + the pending
+    // unit draft must both be valid before the admin-password
+    // verification step opens. Nothing is sent yet.
     const draftProblems = validateUnitDraft(unitDraft);
     if (draftProblems.length > 0) {
       setStationModalError(draftProblems.join(" "));
       return;
     }
+    if (stationModal.mode === "add" && unitDraft.length === 0) {
+      // A station without units cannot dispatch — creation requires
+      // at least one pending unit (the backend enforces the same
+      // rule server-side).
+      setStationModalError("Add at least one assigned unit before creating the station.");
+      return;
+    }
     setStationVerifyError(null);
     setVerifyingStationEdit(true);
+  };
+
+  // Single commit for CREATE: one POST carrying the station fields,
+  // ALL initial units, and the admin password. The backend re-verifies
+  // the password server-side, enforces at least one valid unit, and
+  // writes the station + units in ONE atomic database write — so
+  // there is no partial-failure surface: either everything lands or
+  // nothing does (wrong password / cancel persist NOTHING).
+  const commitCreateStation = async (adminPassword) => {
+    setSavingStation(true);
+    setStationVerifyError(null);
+    try {
+      const parsed = parseCoords(stationForm);
+      if (!parsed.ok) {
+        // Defensive: handleSaveStation already validated.
+        setStationVerifyError(parsed.error);
+        setSavingStation(false);
+        return;
+      }
+      await createStation({
+        id: stationForm.id.trim(),
+        name: stationForm.name.trim(),
+        category: stationForm.category,
+        phone: stationForm.phone,
+        coords: parsed.coords,
+        estimatedTurnout: stationForm.estimatedTurnout,
+        assignedUnits: unitDraft.map((u) => ({
+          id: u.id,
+          name: u.name.trim(),
+        })),
+        adminPassword,
+      });
+      flashOk("Station created.");
+      setVerifyingStationEdit(false);
+      setStationModal(null);
+      setUnitDraft([]);
+      setSavingStation(false);
+      await load();
+    } catch (err) {
+      // Wrong admin password / backend validation failure: stay on
+      // the verification dialog so the password (or the edit behind
+      // it) can be corrected. Nothing was created.
+      setStationVerifyError(
+        errorMessage(err, "Couldn't create the station. Try again."),
+      );
+      setSavingStation(false);
+    }
   };
 
   // Single commit for Save Changes: station fields first (that PATCH
@@ -878,19 +914,22 @@ export default function StationManagement({ embedded = false }) {
           onCancel={() => setStationModal(null)}
           onSubmit={handleSaveStation}
         >
-          {/* Assigned units live inside the edit modal — view, add,
-              rename, deactivate. Add mode has no station yet. */}
-          {editStation && (
-            <div
-              aria-label={`Assigned units for ${editStation.name}`}
-              className="border-t border-border pt-4"
-            >
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs uppercase tracking-wide text-ink-dim">
-                  Assigned Units
-                </h3>
-                <span className="font-mono text-xs text-ink-dim">{editStation.id}</span>
-              </div>
+          {/* Assigned units live inside this modal for BOTH add and
+              edit — creation collects the initial units as pending
+              adds; edit manages the existing ones. All entries stay
+              in the draft until the verified Create/Save action. */}
+          <div
+            aria-label={`Assigned units for ${editStation?.name || "new station"}`}
+            className="border-t border-border pt-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs uppercase tracking-wide text-ink-dim">
+                Assigned Units
+              </h3>
+              <span className="font-mono text-xs text-ink-dim">
+                {editStation?.id || stationForm.id || "new station"}
+              </span>
+            </div>
 
               {unitDraft.length === 0 ? (
                 <p className="mt-3 text-center text-sm text-ink-dim">
@@ -938,7 +977,7 @@ export default function StationManagement({ embedded = false }) {
                           confirmUnitId === unit.id ? (
                             <>
                               <button
-                                onClick={() => handleSetUnitActive(editStation.id, unit, false)}
+                                onClick={() => handleSetUnitActive(editStation?.id, unit, false)}
                                 disabled={pendingUnitToggleId != null}
                                 className="rounded-md border border-fire/40 bg-fire/10 px-2 py-1 text-xs font-semibold text-fire disabled:opacity-60"
                               >
@@ -963,7 +1002,7 @@ export default function StationManagement({ embedded = false }) {
                           )
                         ) : (
                           <button
-                            onClick={() => handleSetUnitActive(editStation.id, unit, true)}
+                            onClick={() => handleSetUnitActive(editStation?.id, unit, true)}
                             disabled={pendingUnitToggleId != null}
                             className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink disabled:opacity-60"
                           >
@@ -1015,23 +1054,37 @@ export default function StationManagement({ embedded = false }) {
                   Add Unit
                 </button>
               </div>
-            </div>
-          )}
+          </div>
         </StationFormModal>
       )}
 
       {verifyingStationEdit && stationModal && (
         <AdminPasswordModal
           ariaLabel="Verify Admin Password"
-          title="Confirm Station Changes"
-          description={
-            <p className="text-sm">
-              Save your changes to{" "}
-              <span className="font-semibold">{stationModal.station.name}</span>?
-            </p>
+          title={
+            stationModal.mode === "add"
+              ? "Confirm Station Creation"
+              : "Confirm Station Changes"
           }
-          confirmLabel="Save Changes"
-          savingLabel="Saving…"
+          description={
+            stationModal.mode === "add" ? (
+              <p className="text-sm">
+                Create{" "}
+                <span className="font-semibold">
+                  {stationForm.name.trim() || stationForm.id.trim() || "this station"}
+                </span>{" "}
+                with {unitDraft.length} assigned{" "}
+                {unitDraft.length === 1 ? "unit" : "units"}?
+              </p>
+            ) : (
+              <p className="text-sm">
+                Save your changes to{" "}
+                <span className="font-semibold">{stationModal.station.name}</span>?
+              </p>
+            )
+          }
+          confirmLabel={stationModal.mode === "add" ? "Create Station" : "Save Changes"}
+          savingLabel={stationModal.mode === "add" ? "Creating…" : "Saving…"}
           tone="primary"
           saving={savingStation}
           error={stationVerifyError}
@@ -1039,7 +1092,11 @@ export default function StationManagement({ embedded = false }) {
             setVerifyingStationEdit(false);
             setStationVerifyError(null);
           }}
-          onSubmit={commitStationEdit}
+          onSubmit={(adminPassword) =>
+            stationModal.mode === "add"
+              ? commitCreateStation(adminPassword)
+              : commitStationEdit(adminPassword)
+          }
         />
       )}
 
