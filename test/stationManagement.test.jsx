@@ -153,6 +153,9 @@ describe("StationManagement — station add/edit/activate", () => {
     expect(payload).not.toHaveProperty("id");
     expect(payload.adminPassword).toBe("AdminPass!xK9pQ2");
     expect(await screen.findByText("Station updated.")).toBeTruthy();
+    // Untouched draft units trigger no unit requests.
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+    expect(stationApi.addUnit).not.toHaveBeenCalled();
   });
 
   it("keeps the verification dialog open on a wrong admin password", async () => {
@@ -278,13 +281,40 @@ describe("StationManagement — station add/edit/activate", () => {
   });
 });
 
-describe("StationManagement — assigned units (inside the Edit Station modal)", () => {
+describe("StationManagement — assigned units (pending draft inside the Edit Station modal)", () => {
   async function openEditWithUnits() {
     render(<StationManagement embedded />);
     expect(await screen.findByText("River Park Authority")).toBeTruthy();
     fireEvent.click(screen.getAllByText("Edit")[0]); // FIRE station row
     expect(await screen.findByText("BFP Engine Pumper #1")).toBeTruthy();
     return screen.getByLabelText(/Assigned units for/);
+  }
+
+  async function draftRename(panel, newName) {
+    fireEvent.click(within(panel).getAllByText("Edit")[0]);
+    const unitDialog = screen.getAllByRole("dialog").at(-1);
+    fireEvent.change(within(unitDialog).getByLabelText("Unit Name"), {
+      target: { value: newName },
+    });
+    fireEvent.click(within(unitDialog).getByText("Save Changes"));
+  }
+
+  async function draftAdd(panel, id, name) {
+    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
+      target: { value: id },
+    });
+    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
+      target: { value: name },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
+  }
+
+  async function verifyAndConfirm(password) {
+    const verify = screen.getAllByRole("dialog").at(-1);
+    fireEvent.change(within(verify).getByLabelText("Your Current Password"), {
+      target: { value: password },
+    });
+    fireEvent.click(within(verify).getByText("Save Changes"));
   }
 
   it("lists a station's units with active/inactive badges", async () => {
@@ -304,52 +334,250 @@ describe("StationManagement — assigned units (inside the Edit Station modal)",
     expect(screen.queryByText("No units assigned yet.")).toBeNull();
   });
 
-  it("adds a unit from the inline Add Unit form, independent of Save Changes", async () => {
-    stationApi.addUnit.mockResolvedValue({ success: true });
+  it("Add Unit appends to the pending draft WITHOUT any API mutation", async () => {
     const panel = await openEditWithUnits();
 
-    // Button stays disabled until both fields are filled.
     expect(within(panel).getByRole("button", { name: "Add Unit" }).disabled).toBe(true);
-    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
-      target: { value: "engine-9" },
-    });
-    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
-      target: { value: "Engine Pumper #9" },
-    });
-    expect(within(panel).getByRole("button", { name: "Add Unit" }).disabled).toBe(false);
-    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
+    await draftAdd(panel, "engine-9", "Engine Pumper #9");
 
-    await waitFor(() => expect(stationApi.addUnit).toHaveBeenCalledTimes(1));
-    expect(stationApi.addUnit).toHaveBeenCalledWith("FIRE_BFP_MAIN_STATION", {
-      id: "engine-9",
-      name: "Engine Pumper #9",
-    });
-    expect(await screen.findByText("Unit added.")).toBeTruthy();
+    // Draft-only: no POST, no reload, marked as New.
+    expect(stationApi.addUnit).not.toHaveBeenCalled();
+    expect(stationApi.listStations).toHaveBeenCalledTimes(1);
+    expect(within(panel).getByText("Engine Pumper #9")).toBeTruthy();
+    expect(within(panel).getByText("New")).toBeTruthy();
+    // Inline inputs cleared for the next add.
+    expect(within(panel).getByLabelText("New Unit ID").value).toBe("");
+    expect(within(panel).getByLabelText("New Unit Name").value).toBe("");
   });
 
-  it("renames a unit from the nested Edit Unit dialog", async () => {
-    stationApi.updateUnit.mockResolvedValue({ success: true });
+  it("rejects a duplicate unit ID in the draft without touching the API", async () => {
+    const panel = await openEditWithUnits();
+
+    await draftAdd(panel, "engine-1", "Impostor Engine");
+
+    expect(await screen.findByText(/already exists in this station/)).toBeTruthy();
+    expect(stationApi.addUnit).not.toHaveBeenCalled();
+    // No draft entry was created.
+    expect(within(panel).queryByText("Impostor Engine")).toBeNull();
+  });
+
+  it("renaming a unit updates only the draft (Unsaved badge, no API call)", async () => {
+    const panel = await openEditWithUnits();
+
+    await draftRename(panel, "Engine Alpha");
+
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+    expect(within(panel).getByText("Engine Alpha")).toBeTruthy();
+    expect(within(panel).getByText("Unsaved")).toBeTruthy();
+    // Original name is gone from the row.
+    expect(within(panel).queryByText("BFP Engine Pumper #1")).toBeNull();
+  });
+
+  it("an empty rename is rejected in the unit dialog and leaves the draft unchanged", async () => {
     const panel = await openEditWithUnits();
 
     fireEvent.click(within(panel).getAllByText("Edit")[0]);
     const unitDialog = screen.getAllByRole("dialog").at(-1);
-    expect(unitDialog.getAttribute("aria-label")).toBe("Edit Unit");
-
     fireEvent.change(within(unitDialog).getByLabelText("Unit Name"), {
-      target: { value: "Engine Alpha" },
+      target: { value: "   " },
     });
     fireEvent.click(within(unitDialog).getByText("Save Changes"));
 
-    await waitFor(() => expect(stationApi.updateUnit).toHaveBeenCalledTimes(1));
+    expect(await within(unitDialog).findByText("Unit name is required.")).toBeTruthy();
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+    expect(within(panel).getByText("BFP Engine Pumper #1")).toBeTruthy();
+  });
+
+  it("Remove discards a pending add without any API call", async () => {
+    const panel = await openEditWithUnits();
+    await draftAdd(panel, "engine-9", "Engine Pumper #9");
+    expect(within(panel).getByText("Engine Pumper #9")).toBeTruthy();
+
+    fireEvent.click(within(panel).getByText("Remove"));
+
+    expect(within(panel).queryByText("Engine Pumper #9")).toBeNull();
+    expect(stationApi.addUnit).not.toHaveBeenCalled();
+  });
+
+  it("Save Changes commits station + pending units after ONE reauth, station PATCH first", async () => {
+    stationApi.updateStation.mockResolvedValue({ success: true });
+    stationApi.updateUnit.mockResolvedValue({ success: true });
+    stationApi.addUnit.mockResolvedValue({ success: true });
+    const panel = await openEditWithUnits();
+
+    await draftRename(panel, "Engine Alpha");
+    await draftAdd(panel, "engine-9", "Engine Pumper #9");
+
+    fireEvent.click(screen.getByText("Save Changes"));
+    // Verification opens before ANY mutation.
+    expect(
+      screen.getAllByRole("dialog").at(-1).getAttribute("aria-label"),
+    ).toBe("Verify Admin Password");
+    expect(stationApi.updateStation).not.toHaveBeenCalled();
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+    expect(stationApi.addUnit).not.toHaveBeenCalled();
+
+    await verifyAndConfirm("AdminPass!xK9pQ2");
+
+    expect(await screen.findByText("Station updated.")).toBeTruthy();
+    expect(screen.queryByLabelText("Edit Station")).toBeNull();
+    expect(stationApi.updateStation).toHaveBeenCalledTimes(1);
     expect(stationApi.updateUnit).toHaveBeenCalledWith(
       "FIRE_BFP_MAIN_STATION",
       "engine-1",
       { name: "Engine Alpha" },
     );
-    expect(await screen.findByText("Unit updated.")).toBeTruthy();
+    expect(stationApi.addUnit).toHaveBeenCalledWith("FIRE_BFP_MAIN_STATION", {
+      id: "engine-9",
+      name: "Engine Pumper #9",
+    });
+    // The reauth-carrying station PATCH always runs before unit ops.
+    expect(stationApi.updateStation.mock.invocationCallOrder[0]).toBeLessThan(
+      stationApi.updateUnit.mock.invocationCallOrder[0],
+    );
+    expect(stationApi.updateUnit.mock.invocationCallOrder[0]).toBeLessThan(
+      stationApi.addUnit.mock.invocationCallOrder[0],
+    );
   });
 
-  it("deactivates a unit with the inline two-step confirm (no admin password)", async () => {
+  it("an incorrect admin password persists NOTHING (no station or unit requests)", async () => {
+    stationApi.updateStation.mockRejectedValueOnce({
+      response: { data: { message: "Administrator password is incorrect." } },
+    });
+    const panel = await openEditWithUnits();
+    await draftRename(panel, "Engine Alpha");
+    await draftAdd(panel, "engine-9", "Engine Pumper #9");
+
+    fireEvent.click(screen.getByText("Save Changes"));
+    await verifyAndConfirm("WrongPass!123");
+
+    expect(
+      await screen.findByText("Administrator password is incorrect."),
+    ).toBeTruthy();
+    expect(stationApi.updateStation).toHaveBeenCalledTimes(1);
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+    expect(stationApi.addUnit).not.toHaveBeenCalled();
+
+    // Back on the edit modal, the draft is fully intact.
+    const verify = screen.getAllByRole("dialog").at(-1);
+    fireEvent.click(within(verify).getByText("Cancel"));
+    expect(within(panel).getByText("Engine Alpha")).toBeTruthy();
+    expect(within(panel).getByText("Unsaved")).toBeTruthy();
+    expect(within(panel).getByText("Engine Pumper #9")).toBeTruthy();
+  });
+
+  it("canceling verification persists nothing and keeps the draft", async () => {
+    const panel = await openEditWithUnits();
+    await draftRename(panel, "Engine Alpha");
+    await draftAdd(panel, "engine-9", "Engine Pumper #9");
+
+    fireEvent.click(screen.getByText("Save Changes"));
+    const verify = screen.getAllByRole("dialog").at(-1);
+    fireEvent.click(within(verify).getByText("Cancel"));
+
+    expect(stationApi.updateStation).not.toHaveBeenCalled();
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+    expect(stationApi.addUnit).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Edit Station")).toBeTruthy();
+    expect(within(panel).getByText("Engine Alpha")).toBeTruthy();
+    expect(within(panel).getByText("Engine Pumper #9")).toBeTruthy();
+  });
+
+  it("a partial failure keeps the modal open, reconciles the draft, and retries without duplicating", async () => {
+    // Refresh after the partial failure: the rename landed server-side,
+    // the add did NOT. Refresh after the retry: the add landed too.
+    const REFRESHED = structuredClone(STATIONS);
+    REFRESHED[0].assignedUnits[0].name = "Engine Alpha";
+    const RETRIED = structuredClone(REFRESHED);
+    RETRIED[0].assignedUnits.push({
+      id: "engine-9",
+      name: "Engine Pumper #9",
+      isActive: true,
+    });
+
+    stationApi.updateStation.mockResolvedValue({ success: true });
+    stationApi.updateUnit.mockResolvedValue({ success: true });
+    stationApi.addUnit
+      .mockRejectedValueOnce({
+        response: {
+          data: { message: "Station store write failed. Changes were NOT saved." },
+        },
+      })
+      .mockResolvedValueOnce({ success: true });
+
+    const panel = await openEditWithUnits();
+    await draftRename(panel, "Engine Alpha");
+    await draftAdd(panel, "engine-9", "Engine Pumper #9");
+
+    // First save: station + rename succeed, add fails.
+    stationApi.listStations.mockResolvedValueOnce(REFRESHED);
+    fireEvent.click(screen.getByText("Save Changes"));
+    await verifyAndConfirm("AdminPass!xK9pQ2");
+
+    // Accurate partial report — NOT full success, modal stays open.
+    expect(
+      (await screen.findAllByText(/some unit changes failed/i)).length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getByLabelText("Edit Station")).toBeTruthy();
+    expect(screen.queryByLabelText("Verify Admin Password")).toBeNull();
+    expect(screen.queryByText("Station updated.")).toBeNull();
+    expect(stationApi.updateStation).toHaveBeenCalledTimes(1);
+    expect(stationApi.updateUnit).toHaveBeenCalledTimes(1);
+    expect(stationApi.addUnit).toHaveBeenCalledTimes(1);
+
+    // Draft reconciled against the refreshed server data: the rename
+    // is clean (no Unsaved), the failed add is still pending (New).
+    expect(within(panel).queryByText("Unsaved")).toBeNull();
+    expect(within(panel).getByText("Engine Alpha")).toBeTruthy();
+    expect(within(panel).getByText("Engine Pumper #9")).toBeTruthy();
+    expect(within(panel).getByText("New")).toBeTruthy();
+
+    // Retry: only the still-missing unit op is re-sent — the landed
+    // rename is never duplicated, and engine-9 is added exactly once
+    // more (same id, single request).
+    stationApi.listStations.mockResolvedValueOnce(RETRIED);
+    fireEvent.click(screen.getByText("Save Changes"));
+    await verifyAndConfirm("AdminPass!xK9pQ2");
+
+    expect(await screen.findByText("Station updated.")).toBeTruthy();
+    expect(screen.queryByLabelText("Edit Station")).toBeNull();
+    expect(stationApi.updateStation).toHaveBeenCalledTimes(2);
+    expect(stationApi.updateUnit).toHaveBeenCalledTimes(1); // NOT re-sent
+    expect(stationApi.addUnit).toHaveBeenCalledTimes(2);
+    expect(stationApi.addUnit).toHaveBeenLastCalledWith(
+      "FIRE_BFP_MAIN_STATION",
+      { id: "engine-9", name: "Engine Pumper #9" },
+    );
+  });
+
+  it("Cancel discards all pending station and unit edits without sending anything", async () => {
+    const panel = await openEditWithUnits();
+    await draftRename(panel, "Engine Alpha");
+    await draftAdd(panel, "engine-9", "Engine Pumper #9");
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Renamed Fire Station" },
+    });
+
+    // Close via the edit modal's Cancel (topmost dialog is the edit
+    // modal — no verify/unit dialog is open).
+    fireEvent.click(within(screen.getByLabelText("Edit Station")).getByText("Cancel"));
+
+    expect(stationApi.updateStation).not.toHaveBeenCalled();
+    expect(stationApi.updateUnit).not.toHaveBeenCalled();
+    expect(stationApi.addUnit).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Edit Station")).toBeNull();
+
+    // Reopening starts from clean server state, not the discarded draft.
+    fireEvent.click(screen.getAllByText("Edit")[0]);
+    expect(screen.getByText("BFP Engine Pumper #1")).toBeTruthy();
+    expect(screen.queryByText("Engine Alpha")).toBeNull();
+    expect(screen.queryByText("Engine Pumper #9")).toBeNull();
+    expect(
+      within(screen.getByLabelText(/Assigned units for/)).queryByText("Unsaved"),
+    ).toBeNull();
+  });
+
+  it("deactivates a unit with the inline two-step confirm (no admin password, immediate)", async () => {
     stationApi.setUnitActive.mockResolvedValue({ success: true });
     const panel = await openEditWithUnits();
 
