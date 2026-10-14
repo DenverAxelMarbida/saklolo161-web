@@ -30,6 +30,36 @@ const normalizeUnits = (station) =>
       : { id: u.id, name: u.name, isActive: u.isActive !== false },
   );
 
+// Client-side mirror of the backend's unit validation
+// (services/stationService.js validateUnitPayload) so a bad draft
+// fails fast in the modal, before any request goes out.
+const validateUnitDraft = (draft) => {
+  const errors = [];
+  const seen = new Set();
+  for (const entry of draft) {
+    const label = entry.isNew
+      ? `New unit "${entry.id || "??"}"`
+      : `Unit "${entry.id}"`;
+    if (!entry.name || !entry.name.trim()) {
+      errors.push(`${label}: name is required.`);
+    } else if (entry.name.trim().length > 120) {
+      errors.push(`${label}: name must be at most 120 characters.`);
+    }
+    if (entry.isNew) {
+      if (!entry.id) {
+        errors.push("New unit: ID is required.");
+      } else if (/[.#$[\]/]/.test(entry.id)) {
+        errors.push(`New unit "${entry.id}": ID must not contain . # $ [ ] / characters.`);
+      }
+      if (entry.id && seen.has(entry.id)) {
+        errors.push(`Duplicate unit ID "${entry.id}".`);
+      }
+      seen.add(entry.id);
+    }
+  }
+  return errors;
+};
+
 const emptyStationForm = () => ({
   id: "",
   name: "",
@@ -323,12 +353,15 @@ export default function StationManagement({ embedded = false }) {
   const [deactivateTarget, setDeactivateTarget] = useState(null);
   const [deactivateError, setDeactivateError] = useState(null);
   const [pendingToggleId, setPendingToggleId] = useState(null);
-  // Units live inside the Edit Station modal: inline add form state +
-  // the existing unit modal (rename) + inline deactivate confirm state.
+  // Units live inside the Edit Station modal as a PENDING DRAFT:
+  // adds and renames update only this list until Save Changes commits
+  // everything (station fields + units) after admin reauthentication.
+  // Unit activate/deactivate stays an immediate inline action (same
+  // two-step confirm as before).
+  const [unitDraft, setUnitDraft] = useState([]); // { id, name, origName, isActive, isNew }
   const [newUnitForm, setNewUnitForm] = useState({ id: "", name: "" });
-  const [addingUnit, setAddingUnit] = useState(false);
   const [unitAddError, setUnitAddError] = useState(null);
-  const [unitModal, setUnitModal] = useState(null); // { mode: "edit", stationId, unit }
+  const [unitModal, setUnitModal] = useState(null); // { unitId } — rename dialog
   const [unitForm, setUnitForm] = useState({ id: "", name: "" });
   const [unitModalError, setUnitModalError] = useState(null);
   const [savingUnit, setSavingUnit] = useState(false);
@@ -339,11 +372,14 @@ export default function StationManagement({ embedded = false }) {
     setLoading(true);
     setLoadError(null);
     try {
-      setStations(await listStations({ includeInactive: true }));
+      const list = await listStations({ includeInactive: true });
+      setStations(list);
+      return list;
     } catch (err) {
       setLoadError(
         errorMessage(err, "Couldn't load stations. Check your connection and try again."),
       );
+      return null;
     } finally {
       setLoading(false);
     }
@@ -372,6 +408,22 @@ export default function StationManagement({ embedded = false }) {
   const openEditStation = (station) => {
     setStationForm(stationToForm(station));
     setStationModalError(null);
+    // Seed the pending-unit draft from the server's current units —
+    // every add/rename from here on touches only this draft until
+    // Save Changes commits after admin reauthentication.
+    setUnitDraft(
+      normalizeUnits(station).map((u) => ({
+        id: u.id,
+        name: u.name,
+        origName: u.name,
+        isActive: u.isActive,
+        isNew: false,
+      })),
+    );
+    setNewUnitForm({ id: "", name: "" });
+    setUnitAddError(null);
+    setUnitModal(null);
+    setConfirmUnitId(null);
     setStationModal({ mode: "edit", station });
   };
 
@@ -418,26 +470,42 @@ export default function StationManagement({ embedded = false }) {
       }
       return;
     }
-    // Edit of an EXISTING station: open the admin-password
-    // verification step. Nothing is sent yet — commitStationEdit only
-    // runs after the admin re-proves their OWN password, and the
-    // backend re-verifies it server-side before applying anything.
+    // Edit of an EXISTING station: validate station fields AND the
+    // pending unit draft, then open the admin-password verification
+    // step. Nothing is sent yet — commitStationEdit only runs after
+    // the admin re-proves their OWN password, and the backend
+    // re-verifies it server-side before applying anything.
+    const draftProblems = validateUnitDraft(unitDraft);
+    if (draftProblems.length > 0) {
+      setStationModalError(draftProblems.join(" "));
+      return;
+    }
     setStationVerifyError(null);
     setVerifyingStationEdit(true);
   };
 
+  // Single commit for Save Changes: station fields first (that PATCH
+  // carries the admin password, so a wrong password persists
+  // NOTHING), then the pending unit adds/renames sequentially. The
+  // backend has no atomic station+units transaction — each unit is
+  // its own admin request — so partial failures keep the modal open,
+  // refresh server truth, and reconcile the draft so a retry only
+  // sends what is still missing (never a duplicate create).
   const commitStationEdit = async (adminPassword) => {
     setSavingStation(true);
     setStationVerifyError(null);
+    const stationId = stationModal.station.id;
+
     try {
       const parsed = parseCoords(stationForm);
       if (!parsed.ok) {
         // Defensive: handleSaveStation already validated, but the
         // form can't change while the verify dialog is open.
         setStationVerifyError(parsed.error);
+        setSavingStation(false);
         return;
       }
-      await updateStation(stationModal.station.id, {
+      await updateStation(stationId, {
         name: stationForm.name.trim(),
         category: stationForm.category,
         phone: stationForm.phone,
@@ -445,20 +513,76 @@ export default function StationManagement({ embedded = false }) {
         estimatedTurnout: stationForm.estimatedTurnout,
         adminPassword,
       });
-      flashOk("Station updated.");
-      setVerifyingStationEdit(false);
-      setStationModal(null);
-      await load();
     } catch (err) {
       // Wrong admin password / backend failure: stay on the
       // verification dialog (the edit modal stays open behind it) so
-      // the password can be corrected. The station is unchanged.
+      // the password can be corrected. Nothing has been persisted.
       setStationVerifyError(
         errorMessage(err, "Couldn't save the changes. Try again."),
       );
-    } finally {
       setSavingStation(false);
+      return;
     }
+
+    // Station fields are saved (password accepted). Now the pending
+    // unit operations — one request each, in draft order.
+    const failures = [];
+    for (const entry of unitDraft) {
+      try {
+        if (entry.isNew) {
+          await addUnit(stationId, { id: entry.id, name: entry.name.trim() });
+        } else if (entry.name.trim() !== entry.origName) {
+          await updateUnit(stationId, entry.id, { name: entry.name.trim() });
+        } else {
+          continue; // untouched existing unit — nothing to send
+        }
+      } catch (err) {
+        failures.push(
+          `${entry.isNew ? `Adding "${entry.id}"` : `Renaming "${entry.id}"`} failed: ${errorMessage(err, "request failed.")}`,
+        );
+      }
+    }
+
+    if (failures.length === 0) {
+      flashOk("Station updated.");
+      setVerifyingStationEdit(false);
+      setStationModal(null);
+      setUnitDraft([]);
+      setSavingStation(false);
+      await load();
+      return;
+    }
+
+    // Partial failure: refresh server truth and reconcile the draft —
+    // adds that actually landed are dropped (retry can never
+    // duplicate them), renames that landed are marked clean, and
+    // everything still pending stays visible for a safe retry.
+    const freshList = (await load()) || stations;
+    const freshStation = freshList.find((s) => s.id === stationId);
+    if (freshStation) {
+      const freshUnits = normalizeUnits(freshStation);
+      setUnitDraft((draft) =>
+        draft
+          .map((entry) => {
+            const server = freshUnits.find((u) => u.id === entry.id);
+            if (entry.isNew) return server ? null : entry; // created → drop
+            if (!server) return entry;
+            const renameLanded = server.name === entry.name.trim();
+            return {
+              ...entry,
+              name: renameLanded ? server.name : entry.name,
+              origName: server.name,
+              isActive: server.isActive,
+            };
+          })
+          .filter(Boolean),
+      );
+    }
+    setVerifyingStationEdit(false);
+    setSavingStation(false);
+    const report = `Station fields saved, but some unit changes failed — review the remaining changes and save again. ${failures.join(" ")}`;
+    flashError(report);
+    setStationModalError(report);
   };
 
   const handleSetStationActive = async (station, isActive, adminPassword) => {
@@ -497,55 +621,77 @@ export default function StationManagement({ embedded = false }) {
     }
   };
 
-  // Inline "Add Unit" inside the Edit Station modal — the same
-  // POST /api/stations/:id/units flow the old panel used. Independent
-  // of the station-save flow: a unit add succeeds or fails on its
-  // own and is never claimed added without the backend confirming it.
-  const handleAddUnitInline = async () => {
-    if (addingUnit) return;
+  // Inline "Add Unit" inside the Edit Station modal — appends to the
+  // PENDING draft only. Nothing is sent until Save Changes commits
+  // after admin reauthentication (same rules as the backend:
+  // non-empty id ≤64 chars without . # $ [ ] /, name ≤120 chars,
+  // id unique within the station).
+  const handleAddUnitInline = () => {
     const id = newUnitForm.id.trim();
     const name = newUnitForm.name.trim();
-    if (!id || !name) {
-      setUnitAddError("Unit ID and name are required.");
+    const errors = [];
+    if (!id) {
+      errors.push("Unit ID is required.");
+    } else if (id.length > 64) {
+      errors.push("Unit ID must be at most 64 characters.");
+    } else if (/[.#$[\]/]/.test(id)) {
+      errors.push("Unit ID must not contain . # $ [ ] / characters.");
+    }
+    if (!name) {
+      errors.push("Unit name is required.");
+    } else if (name.length > 120) {
+      errors.push("Unit name must be at most 120 characters.");
+    }
+    if (!errors.length && unitDraft.some((u) => u.id === id)) {
+      errors.push(`Unit "${id}" already exists in this station.`);
+    }
+    if (errors.length) {
+      setUnitAddError(errors.join(" "));
       return;
     }
-    setAddingUnit(true);
     setUnitAddError(null);
-    try {
-      await addUnit(stationModal.station.id, { id, name });
-      setNewUnitForm({ id: "", name: "" });
-      flashOk("Unit added.");
-      await load();
-    } catch (err) {
-      setUnitAddError(errorMessage(err, "Couldn't add the unit. Try again."));
-    } finally {
-      setAddingUnit(false);
-    }
+    setUnitDraft([
+      ...unitDraft,
+      { id, name, origName: null, isActive: true, isNew: true },
+    ]);
+    setNewUnitForm({ id: "", name: "" });
   };
 
-  const openEditUnit = (stationId, unit) => {
-    setUnitForm({ id: unit.id, name: unit.name });
+  const removeDraftUnit = (unitId) => {
+    setUnitDraft((draft) => draft.filter((e) => !(e.isNew && e.id === unitId)));
+  };
+
+  const openEditUnit = (unitId) => {
+    const entry = unitDraft.find((u) => u.id === unitId);
+    if (!entry) return;
+    setUnitForm({ id: entry.id, name: entry.name });
     setUnitModalError(null);
-    setUnitModal({ mode: "edit", stationId, unit });
+    setUnitModal({ unitId });
   };
 
-  const handleSaveUnit = async () => {
+  // Rename dialog updates the DRAFT only — no request until Save
+  // Changes. Same validation rules the backend enforces.
+  const handleSaveUnit = () => {
+    const name = unitForm.name.trim();
+    if (!name) {
+      setUnitModalError("Unit name is required.");
+      return;
+    }
+    if (name.length > 120) {
+      setUnitModalError("Unit name must be at most 120 characters.");
+      return;
+    }
     setSavingUnit(true);
-    setUnitModalError(null);
-    try {
-      await updateUnit(unitModal.stationId, unitModal.unit.id, {
-        name: unitForm.name.trim(),
-      });
-      flashOk("Unit updated.");
-      setUnitModal(null);
-      await load();
-    } catch (err) {
-      setUnitModalError(errorMessage(err, "Couldn't save the changes. Try again."));
-    } finally {
-      setSavingUnit(false);
-    }
+    setUnitDraft((draft) =>
+      draft.map((e) => (e.id === unitModal.unitId ? { ...e, name } : e)),
+    );
+    setUnitModal(null);
+    setSavingUnit(false);
   };
 
+  // Unit activate/deactivate is an immediate action (unchanged
+  // two-step confirm, no admin password per scope) — sync the draft
+  // entry's badge after the server confirms.
   const handleSetUnitActive = async (stationId, unit, isActive) => {
     if (pendingUnitToggleId != null) return;
     setPendingUnitToggleId(unit.id);
@@ -554,6 +700,9 @@ export default function StationManagement({ embedded = false }) {
     try {
       await setUnitActive(stationId, unit.id, isActive);
       setConfirmUnitId(null);
+      setUnitDraft((draft) =>
+        draft.map((e) => (e.id === unit.id ? { ...e, isActive } : e)),
+      );
       flashOk(isActive ? "Unit activated." : "Unit deactivated.");
       await load();
     } catch (err) {
@@ -743,13 +892,13 @@ export default function StationManagement({ embedded = false }) {
                 <span className="font-mono text-xs text-ink-dim">{editStation.id}</span>
               </div>
 
-              {normalizeUnits(editStation).length === 0 ? (
+              {unitDraft.length === 0 ? (
                 <p className="mt-3 text-center text-sm text-ink-dim">
                   No units assigned yet.
                 </p>
               ) : (
                 <ul className="mt-3 divide-y divide-border rounded-md border border-border">
-                  {normalizeUnits(editStation).map((unit) => (
+                  {unitDraft.map((unit) => (
                     <li
                       key={unit.id}
                       className="flex items-center justify-between gap-2 px-3 py-2"
@@ -760,13 +909,32 @@ export default function StationManagement({ embedded = false }) {
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {statusBadge(unit.isActive)}
+                        {/* Pending-state markers: draft-only until Save
+                            Changes commits everything after reauth. */}
+                        {unit.isNew && (
+                          <span className="rounded border border-medical/40 bg-medical/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-medical">
+                            New
+                          </span>
+                        )}
+                        {!unit.isNew && unit.name !== unit.origName && (
+                          <span className="rounded border border-ink-dim/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-ink-dim">
+                            Unsaved
+                          </span>
+                        )}
                         <button
-                          onClick={() => openEditUnit(editStation.id, unit)}
+                          onClick={() => openEditUnit(unit.id)}
                           className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink"
                         >
                           Edit
                         </button>
-                        {unit.isActive !== false ? (
+                        {unit.isNew ? (
+                          <button
+                            onClick={() => removeDraftUnit(unit.id)}
+                            className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-fire"
+                          >
+                            Remove
+                          </button>
+                        ) : unit.isActive !== false ? (
                           confirmUnitId === unit.id ? (
                             <>
                               <button
@@ -808,10 +976,9 @@ export default function StationManagement({ embedded = false }) {
                 </ul>
               )}
 
-              {/* Inline add — same POST /api/stations/:id/units flow as
-                  the old panel button. Independent of Save Changes: a
-                  unit add succeeds or fails on its own and never claims
-                  success without the backend confirming it. */}
+              {/* Inline add — appends to the PENDING draft only. The
+                  unit is created by Save Changes (after admin
+                  reauthentication), never by this button. */}
               <div className="mt-3 rounded-md border border-border p-3">
                 <h4 className="text-xs uppercase tracking-wide text-ink-dim">
                   Add Unit
@@ -840,13 +1007,12 @@ export default function StationManagement({ embedded = false }) {
                 <button
                   onClick={handleAddUnitInline}
                   disabled={
-                    addingUnit ||
                     newUnitForm.id.trim().length === 0 ||
                     newUnitForm.name.trim().length === 0
                   }
                   className="mt-3 rounded-md bg-medical px-3 py-1.5 text-xs font-semibold text-bg transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
-                  {addingUnit ? "Adding…" : "Add Unit"}
+                  Add Unit
                 </button>
               </div>
             </div>
@@ -905,7 +1071,7 @@ export default function StationManagement({ embedded = false }) {
 
       {unitModal && (
         <UnitFormModal
-          unit={unitModal.unit}
+          unit={unitDraft.find((u) => u.id === unitModal.unitId) ?? { id: unitModal.unitId, name: unitForm.name }}
           form={unitForm}
           setForm={setUnitForm}
           error={unitModalError}
