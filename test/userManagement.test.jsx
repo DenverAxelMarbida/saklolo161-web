@@ -564,7 +564,7 @@ describe("UserManagement — admin Change Password action", () => {
     expect(submit.disabled).toBe(false);
   });
 
-  it("submits adminSetUserPassword with the target uid and the two password fields only", async () => {
+  it("submits adminSetUserPassword only after the admin re-proves their OWN password", async () => {
     listUsers.mockResolvedValue([enabledUser]);
     adminSetUserPassword.mockResolvedValue({
       success: true,
@@ -582,14 +582,26 @@ describe("UserManagement — admin Change Password action", () => {
     });
     fireEvent.click(screen.getByText("Update Password"));
 
+    // The verification step opens — NO API call until the admin's own
+    // password is submitted (the backend re-verifies it server-side).
+    const verifyDialog = screen.getByRole("dialog");
+    expect(verifyDialog.getAttribute("aria-label")).toBe("Verify Admin Password");
+    expect(adminSetUserPassword).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Your Current Password"), {
+      target: { value: "AdminPass!xK9pQ2" },
+    });
+    fireEvent.click(screen.getByText("Update Password"));
+
     await waitFor(() =>
       expect(adminSetUserPassword).toHaveBeenCalledWith("uid-1", {
         newPassword: NEW_PASS,
         confirmNewPassword: NEW_PASS,
+        adminPassword: "AdminPass!xK9pQ2",
       }),
     );
 
-    // Success: backend-confirmed message shown, fields cleared.
+    // Success: backend-confirmed message shown, new-password fields cleared.
     expect(
       await screen.findByText("Password updated successfully."),
     ).toBeTruthy();
@@ -597,7 +609,77 @@ describe("UserManagement — admin Change Password action", () => {
     expect(screen.getByLabelText("Confirm New Password").value).toBe("");
   });
 
-  it("shows a pending state, disables duplicate submission, then surfaces a backend error", async () => {
+  it("keeps the verification dialog open on wrong credentials and corrects without losing the new password", async () => {
+    listUsers.mockResolvedValue([enabledUser]);
+    adminSetUserPassword
+      .mockRejectedValueOnce({
+        response: { data: { message: "Administrator password is incorrect." } },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        message: "Password updated successfully.",
+      });
+
+    render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Change Password"));
+
+    fireEvent.change(screen.getByLabelText("New Password"), {
+      target: { value: NEW_PASS },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm New Password"), {
+      target: { value: NEW_PASS },
+    });
+    fireEvent.click(screen.getByText("Update Password"));
+
+    fireEvent.change(screen.getByLabelText("Your Current Password"), {
+      target: { value: "WrongPass!123" },
+    });
+    fireEvent.click(screen.getByText("Update Password"));
+
+    // Error surfaces in the verification dialog, which stays open —
+    // the account password is unchanged.
+    expect(
+      await screen.findByText("Administrator password is incorrect."),
+    ).toBeTruthy();
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe(
+      "Verify Admin Password",
+    );
+    expect(adminSetUserPassword).toHaveBeenCalledTimes(1);
+
+    // Retry with the correct password from the same dialog succeeds.
+    fireEvent.change(screen.getByLabelText("Your Current Password"), {
+      target: { value: "AdminPass!xK9pQ2" },
+    });
+    fireEvent.click(screen.getByText("Update Password"));
+    expect(
+      await screen.findByText("Password updated successfully."),
+    ).toBeTruthy();
+  });
+
+  it("canceling the verification dialog never calls the API and returns to the password form", async () => {
+    listUsers.mockResolvedValue([enabledUser]);
+    render(<UserManagement />);
+    fireEvent.click(await screen.findByText("Change Password"));
+
+    fireEvent.change(screen.getByLabelText("New Password"), {
+      target: { value: NEW_PASS },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm New Password"), {
+      target: { value: NEW_PASS },
+    });
+    fireEvent.click(screen.getByText("Update Password"));
+
+    fireEvent.click(screen.getByText("Cancel"));
+
+    // Back on the password form — values retained, still no API call.
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe(
+      "Change Account Password",
+    );
+    expect(screen.getByLabelText("New Password").value).toBe(NEW_PASS);
+    expect(adminSetUserPassword).not.toHaveBeenCalled();
+  });
+
+  it("shows a pending state during verification and disables duplicate submission", async () => {
     let rejectRequest;
     adminSetUserPassword.mockReturnValue(
       new Promise((_, reject) => {
@@ -616,8 +698,13 @@ describe("UserManagement — admin Change Password action", () => {
       target: { value: NEW_PASS },
     });
     fireEvent.click(screen.getByText("Update Password"));
+    fireEvent.change(screen.getByLabelText("Your Current Password"), {
+      target: { value: "AdminPass!xK9pQ2" },
+    });
+    fireEvent.click(screen.getByText("Update Password"));
 
-    // Pending: label swaps, submit disables, no second request.
+    // Pending: label swaps on the verification dialog's confirm button,
+    // submit disables, no second request.
     const pending = await screen.findByText("Updating…");
     expect(pending.disabled).toBe(true);
     fireEvent.click(pending);
@@ -631,9 +718,6 @@ describe("UserManagement — admin Change Password action", () => {
       await screen.findByText("Password must be at least 8 characters."),
     ).toBeTruthy();
     expect(screen.getByRole("dialog")).toBeTruthy();
-    // Fields retained so the admin can retry.
-    expect(screen.getByLabelText("New Password").value).toBe(NEW_PASS);
-    expect(screen.getByLabelText("Confirm New Password").value).toBe(NEW_PASS);
   });
 
   it("closes on Escape without calling the API", async () => {

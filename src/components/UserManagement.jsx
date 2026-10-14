@@ -9,6 +9,7 @@ import {
 } from "../lib/api";
 import { isStrongPassword } from "../lib/passwordPolicy";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
+import AdminPasswordModal from "./AdminPasswordModal";
 import PasswordRequirements from "./PasswordRequirements";
 import PasswordInput from "./PasswordInput";
 import Skeleton from "./Skeleton";
@@ -172,97 +173,45 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
 // the target's access, so the ADMIN must re-prove their OWN current
 // password here — the backend (PATCH /api/users/:uid/status) re-
 // verifies it server-side against the authenticated token's email
-// before anything is disabled. This dialog is UI only; it can never
-// bypass that check.
+// before anything is disabled. Thin wrapper over the shared
+// AdminPasswordModal (same UI + wording as before the extraction).
 function DisableAccountModal({ user, saving, error, onCancel, onSubmit }) {
-  const rootRef = useRef(null);
-  useDialogDismiss(rootRef, onCancel);
-  const [adminPassword, setAdminPassword] = useState("");
-  const canSubmit = !saving && adminPassword.length > 0;
-
   return (
-    <div
-      ref={rootRef}
-      tabIndex={-1}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Disable Account"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none animate-fade-in"
-    >
-      <div className="w-full max-w-md animate-pop-in overflow-hidden rounded-lg border border-border bg-panel shadow-modal">
-        <div className="flex items-center justify-between border-b border-border p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide">
-            Disable Account
-          </h2>
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label="Close"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-dim transition-colors hover:text-ink"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="space-y-4 p-4">
-          <p className="text-sm">
-            Disable <span className="font-semibold">{user.email}</span>? The
-            account can no longer sign in until it is enabled again.
-          </p>
-          <p className="text-sm text-ink-dim">
-            For your security, enter your own current password to confirm.
-          </p>
-          <div>
-            <label
-              className="text-xs uppercase tracking-wide text-ink-dim"
-              htmlFor="disable-admin-password"
-            >
-              Your Current Password
-            </label>
-            <PasswordInput
-              id="disable-admin-password"
-              autoComplete="current-password"
-              value={adminPassword}
-              onChange={(e) => setAdminPassword(e.target.value)}
-              className="mt-1 w-full rounded-md border border-border bg-bg pl-3 py-2 text-sm focus:border-medical focus:outline-none"
-            />
-          </div>
-
-          {error && <p className="text-sm text-fire">{error}</p>}
-        </div>
-
-        <div className="flex gap-2 border-t border-border p-4">
-          <button
-            onClick={onCancel}
-            className="flex-1 rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onSubmit(adminPassword)}
-            disabled={!canSubmit}
-            className="flex-1 rounded-md border border-fire/40 bg-fire/10 py-2 text-sm font-semibold text-fire transition-opacity disabled:opacity-60"
-          >
-            {saving ? "Disabling…" : "Confirm Disable"}
-          </button>
-        </div>
-      </div>
-    </div>
+    <AdminPasswordModal
+      ariaLabel="Disable Account"
+      title="Disable Account"
+      description={
+        <p className="text-sm">
+          Disable <span className="font-semibold">{user.email}</span>? The
+          account can no longer sign in until it is enabled again.
+        </p>
+      }
+      confirmLabel="Confirm Disable"
+      savingLabel="Disabling…"
+      saving={saving}
+      error={error}
+      onCancel={onCancel}
+      onSubmit={onSubmit}
+    />
   );
 }
 
 // Admin reset of ANOTHER account's password (backend:
-// PATCH /api/users/:uid/password — verifyAuth + requireAdmin). Only
-// the new password and its confirmation are requested; authorization
-// is the verified admin session. Mirrors the self-service
-// ChangePasswordModal UX (live policy checklist, success message
-// in-dialog, fields cleared on success).
+// PATCH /api/users/:uid/password — verifyAuth + requireAdmin). The
+// new password and its confirmation are collected first; saving then
+// opens the shared AdminPasswordModal so the ADMIN re-proves their
+// OWN current password — the backend re-verifies it server-side
+// against the token's email before the change is applied. Mirrors
+// the self-service ChangePasswordModal UX (live policy checklist,
+// success message in-dialog, fields cleared on success). Canceling
+// the verification step never calls the API.
 function AdminSetPasswordModal({ user, onCancel }) {
   const rootRef = useRef(null);
   useDialogDismiss(rootRef, onCancel);
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
-  const [error, setError] = useState(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -273,26 +222,55 @@ function AdminSetPasswordModal({ user, onCancel }) {
     isStrongPassword(newPassword) &&
     confirmNewPassword === newPassword;
 
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
+  const handleVerify = async (adminPassword) => {
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+    setVerifyError(null);
     try {
       const result = await adminSetUserPassword(user.uid, {
         newPassword,
         confirmNewPassword,
+        adminPassword,
       });
       setSuccess(result?.message || "Password updated successfully.");
       setNewPassword("");
       setConfirmNewPassword("");
+      setVerifying(false);
     } catch (err) {
-      setError(errorMessage(err, "Couldn't update the password. Try again."));
-      // The new-password fields stay so a retry only re-enters them.
+      // Wrong admin password / backend failure: stay on the
+      // verification dialog so it can be corrected without
+      // re-entering the new password. Neither password is ever
+      // persisted beyond this request.
+      setVerifyError(
+        errorMessage(err, "Couldn't update the password. Try again."),
+      );
     } finally {
       setSaving(false);
     }
   };
+
+  if (verifying) {
+    return (
+      <AdminPasswordModal
+        ariaLabel="Verify Admin Password"
+        title="Confirm Password Change"
+        description={
+          <p className="text-sm">
+            Set a new password for{" "}
+            <span className="font-semibold">{user.email}</span>.
+          </p>
+        }
+        confirmLabel="Update Password"
+        savingLabel="Updating…"
+        saving={saving}
+        error={verifyError}
+        onCancel={() => {
+          setVerifying(false);
+          setVerifyError(null);
+        }}
+        onSubmit={handleVerify}
+      />
+    );
+  }
 
   return (
     <div
@@ -359,7 +337,6 @@ function AdminSetPasswordModal({ user, onCancel }) {
             )}
           </div>
 
-          {error && <p className="text-sm text-fire">{error}</p>}
           {success && <p className="text-sm text-risk-low">{success}</p>}
         </div>
 
@@ -371,11 +348,16 @@ function AdminSetPasswordModal({ user, onCancel }) {
             {success ? "Close" : "Cancel"}
           </button>
           <button
-            onClick={handleSubmit}
+            onClick={() => {
+              if (!canSubmit) return;
+              setSuccess(null);
+              setVerifyError(null);
+              setVerifying(true);
+            }}
             disabled={!canSubmit}
             className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60"
           >
-            {saving ? "Updating…" : "Update Password"}
+            Update Password
           </button>
         </div>
       </div>

@@ -223,13 +223,18 @@ export const setUserEnabled = async (uid, enabled, { adminPassword } = {}) => {
 
 // Admin changes ANOTHER account's password (backend:
 // PATCH /api/users/:uid/password — verifyAuth + requireAdmin).
-// Only the new password + confirmation are sent; authorization is
-// the verified admin session, no admin-password reauthentication.
+// Sensitive: the acting admin's OWN current password (adminPassword)
+// rides along and is re-verified server-side against the token's
+// email before the change is applied — same mechanism as disabling.
 // Neither password is ever logged or persisted anywhere.
-export const adminSetUserPassword = async (uid, { newPassword, confirmNewPassword }) => {
+export const adminSetUserPassword = async (
+  uid,
+  { newPassword, confirmNewPassword, adminPassword },
+) => {
   const response = await api.patch(`/api/users/${uid}/password`, {
     newPassword,
     confirmNewPassword,
+    adminPassword,
   });
   return response.data;
 };
@@ -268,10 +273,16 @@ export const updateStation = async (stationId, payload) => {
   return response.data;
 };
 
-export const setStationActive = async (stationId, isActive) => {
-  const response = await api.patch(`/api/stations/${stationId}/status`, {
-    isActive,
-  });
+// Deactivation (isActive: false) is sensitive: the backend requires
+// the acting admin's OWN current password (adminPassword) and
+// re-verifies it server-side first. Reactivation needs no password —
+// omit the options object for that.
+export const setStationActive = async (stationId, isActive, { adminPassword } = {}) => {
+  const body = { isActive };
+  if (isActive === false && adminPassword) {
+    body.adminPassword = adminPassword;
+  }
+  const response = await api.patch(`/api/stations/${stationId}/status`, body);
   return response.data;
 };
 

@@ -471,7 +471,7 @@ describe("user management endpoints", () => {
     expect(mockPatch).toHaveBeenCalledWith("/api/users/u1/status", { enabled: true });
   });
 
-  it("adminSetUserPassword PATCHes /api/users/:uid/password with only the two password fields", async () => {
+  it("adminSetUserPassword PATCHes /api/users/:uid/password with the two password fields + the acting admin's own password", async () => {
     mockPatch.mockResolvedValue({
       data: { success: true, message: "Password updated successfully." },
     });
@@ -479,6 +479,7 @@ describe("user management endpoints", () => {
     const payload = {
       newPassword: "N3wSecure!Passw0rd!",
       confirmNewPassword: "N3wSecure!Passw0rd!",
+      adminPassword: "AdminPass!xK9pQ2",
     };
     const result = await adminSetUserPassword("u1", payload);
 
@@ -553,14 +554,26 @@ describe("station management endpoints", () => {
     expect(mockPatch).toHaveBeenCalledWith("/api/stations/X", { name: "Renamed" });
   });
 
-  it("setStationActive PATCHes /api/stations/:id/status with { isActive }", async () => {
+  it("setStationActive PATCHes /api/stations/:id/status, attaching adminPassword only for deactivation", async () => {
     mockPatch.mockResolvedValue({ data: { success: true } });
 
-    await setStationActive("X", false);
-    expect(mockPatch).toHaveBeenCalledWith("/api/stations/X/status", { isActive: false });
+    await setStationActive("X", false, { adminPassword: "AdminPass!xK9pQ2" });
+    expect(mockPatch).toHaveBeenCalledWith("/api/stations/X/status", {
+      isActive: false,
+      adminPassword: "AdminPass!xK9pQ2",
+    });
 
-    await setStationActive("X", true);
-    expect(mockPatch).toHaveBeenLastCalledWith("/api/stations/X/status", { isActive: true });
+    // Activation never carries a password — even if one is passed in.
+    await setStationActive("X", true, { adminPassword: "AdminPass!xK9pQ2" });
+    expect(mockPatch).toHaveBeenLastCalledWith("/api/stations/X/status", {
+      isActive: true,
+    });
+
+    // No third arg (e.g. legacy callers) still deactivates with body only.
+    await setStationActive("X", false);
+    expect(mockPatch).toHaveBeenLastCalledWith("/api/stations/X/status", {
+      isActive: false,
+    });
   });
 
   it("addUnit POSTs /api/stations/:id/units with the unit payload", async () => {

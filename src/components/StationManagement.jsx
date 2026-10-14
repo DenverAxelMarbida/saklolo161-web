@@ -9,6 +9,7 @@ import {
   setUnitActive,
 } from "../lib/api";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
+import AdminPasswordModal from "./AdminPasswordModal";
 import Skeleton from "./Skeleton";
 
 // Backend Title-Case categories (the dispatch contract). The web
@@ -52,8 +53,10 @@ const stationToForm = (station) => ({
 // TriageModal-style overlay form for add/edit. The station id exists
 // for ADD ONLY — ids are immutable once created (the backend rejects
 // id changes). Coordinates are free-text inputs parsed to numbers;
-// the backend re-validates ranges server-side.
-function StationFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit }) {
+// the backend re-validates ranges server-side. Edit mode additionally
+// receives a `children` section — the assigned-units manager (list +
+// inline add) — so unit management lives inside this one modal.
+function StationFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit, children }) {
   const rootRef = useRef(null);
   useDialogDismiss(rootRef, onCancel);
   const isAdd = mode === "add";
@@ -192,6 +195,8 @@ function StationFormModal({ mode, form, setForm, error, saving, onCancel, onSubm
           </div>
 
           {error && <p className="text-sm text-fire">{error}</p>}
+
+          {children}
         </div>
 
         <div className="flex gap-2 border-t border-border p-4">
@@ -214,12 +219,13 @@ function StationFormModal({ mode, form, setForm, error, saving, onCancel, onSubm
   );
 }
 
-// Unit id exists for ADD ONLY — ids are immutable (the backend
+// Rename-only dialog for a unit inside a station (the old add-mode
+// moved inline into the Edit Station modal — see the units section
+// passed to StationFormModal). Unit ids are immutable (the backend
 // rejects id changes); edits rename the unit in place.
-function UnitFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit }) {
+function UnitFormModal({ unit, form, setForm, error, saving, onCancel, onSubmit }) {
   const rootRef = useRef(null);
   useDialogDismiss(rootRef, onCancel);
-  const isAdd = mode === "add";
 
   return (
     <div
@@ -227,13 +233,13 @@ function UnitFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
       tabIndex={-1}
       role="dialog"
       aria-modal="true"
-      aria-label={isAdd ? "Add Unit" : "Edit Unit"}
+      aria-label="Edit Unit"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none animate-fade-in"
     >
       <div className="w-full max-w-md animate-pop-in overflow-hidden rounded-lg border border-border bg-panel shadow-modal">
         <div className="flex items-center justify-between border-b border-border p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide">
-            {isAdd ? "Add Unit" : "Edit Unit"}
+            Edit Unit
           </h2>
           <button
             type="button"
@@ -246,24 +252,7 @@ function UnitFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
         </div>
 
         <div className="space-y-4 p-4">
-          {isAdd && (
-            <div>
-              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="unit-id">
-                Unit ID
-              </label>
-              <input
-                id="unit-id"
-                type="text"
-                value={form.id}
-                onChange={(e) => setForm({ ...form, id: e.target.value })}
-                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-sm focus:border-medical focus:outline-none"
-              />
-              <p className="mt-1 text-xs text-ink-dim">
-                Unique within this station. Cannot be changed later.
-              </p>
-            </div>
-          )}
-
+          <p className="font-mono text-xs text-ink-dim">{unit.id}</p>
           <div>
             <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="unit-name">
               Unit Name
@@ -292,7 +281,7 @@ function UnitFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
             disabled={saving}
             className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60"
           >
-            {saving ? "Saving…" : isAdd ? "Add Unit" : "Save Changes"}
+            {saving ? "Saving…" : "Save Changes"}
           </button>
         </div>
       </div>
@@ -325,11 +314,21 @@ export default function StationManagement({ embedded = false }) {
   const [stationForm, setStationForm] = useState(emptyStationForm());
   const [stationModalError, setStationModalError] = useState(null);
   const [savingStation, setSavingStation] = useState(false);
-  const [confirmStationId, setConfirmStationId] = useState(null);
+  // Edit-mode admin reauthentication (the actual update only runs
+  // from this verification step — see commitStationEdit).
+  const [verifyingStationEdit, setVerifyingStationEdit] = useState(false);
+  const [stationVerifyError, setStationVerifyError] = useState(null);
+  // Deactivation runs through its own admin-verification dialog
+  // (replacing the old inline Confirm-deactivate two-step).
+  const [deactivateTarget, setDeactivateTarget] = useState(null);
+  const [deactivateError, setDeactivateError] = useState(null);
   const [pendingToggleId, setPendingToggleId] = useState(null);
-  // Units panel: which station's units are being managed + unit modal state.
-  const [unitsForStationId, setUnitsForStationId] = useState(null);
-  const [unitModal, setUnitModal] = useState(null); // { mode: "add", stationId } | { mode: "edit", stationId, unit }
+  // Units live inside the Edit Station modal: inline add form state +
+  // the existing unit modal (rename) + inline deactivate confirm state.
+  const [newUnitForm, setNewUnitForm] = useState({ id: "", name: "" });
+  const [addingUnit, setAddingUnit] = useState(false);
+  const [unitAddError, setUnitAddError] = useState(null);
+  const [unitModal, setUnitModal] = useState(null); // { mode: "edit", stationId, unit }
   const [unitForm, setUnitForm] = useState({ id: "", name: "" });
   const [unitModalError, setUnitModalError] = useState(null);
   const [savingUnit, setSavingUnit] = useState(false);
@@ -390,15 +389,15 @@ export default function StationManagement({ embedded = false }) {
   };
 
   const handleSaveStation = async () => {
-    setSavingStation(true);
     setStationModalError(null);
-    try {
-      const parsed = parseCoords(stationForm);
-      if (!parsed.ok) {
-        setStationModalError(parsed.error);
-        return;
-      }
-      if (stationModal.mode === "add") {
+    const parsed = parseCoords(stationForm);
+    if (!parsed.ok) {
+      setStationModalError(parsed.error);
+      return;
+    }
+    if (stationModal.mode === "add") {
+      setSavingStation(true);
+      try {
         await createStation({
           id: stationForm.id.trim(),
           name: stationForm.name.trim(),
@@ -408,33 +407,61 @@ export default function StationManagement({ embedded = false }) {
           estimatedTurnout: stationForm.estimatedTurnout,
         });
         flashOk("Station created.");
-      } else {
-        await updateStation(stationModal.station.id, {
-          name: stationForm.name.trim(),
-          category: stationForm.category,
-          phone: stationForm.phone,
-          coords: parsed.coords,
-          estimatedTurnout: stationForm.estimatedTurnout,
-        });
-        flashOk("Station updated.");
+        setStationModal(null);
+        await load();
+      } catch (err) {
+        setStationModalError(
+          errorMessage(err, "Couldn't create the station. Try again."),
+        );
+      } finally {
+        setSavingStation(false);
       }
+      return;
+    }
+    // Edit of an EXISTING station: open the admin-password
+    // verification step. Nothing is sent yet — commitStationEdit only
+    // runs after the admin re-proves their OWN password, and the
+    // backend re-verifies it server-side before applying anything.
+    setStationVerifyError(null);
+    setVerifyingStationEdit(true);
+  };
+
+  const commitStationEdit = async (adminPassword) => {
+    setSavingStation(true);
+    setStationVerifyError(null);
+    try {
+      const parsed = parseCoords(stationForm);
+      if (!parsed.ok) {
+        // Defensive: handleSaveStation already validated, but the
+        // form can't change while the verify dialog is open.
+        setStationVerifyError(parsed.error);
+        return;
+      }
+      await updateStation(stationModal.station.id, {
+        name: stationForm.name.trim(),
+        category: stationForm.category,
+        phone: stationForm.phone,
+        coords: parsed.coords,
+        estimatedTurnout: stationForm.estimatedTurnout,
+        adminPassword,
+      });
+      flashOk("Station updated.");
+      setVerifyingStationEdit(false);
       setStationModal(null);
       await load();
     } catch (err) {
-      setStationModalError(
-        errorMessage(
-          err,
-          stationModal.mode === "add"
-            ? "Couldn't create the station. Try again."
-            : "Couldn't save the changes. Try again.",
-        ),
+      // Wrong admin password / backend failure: stay on the
+      // verification dialog (the edit modal stays open behind it) so
+      // the password can be corrected. The station is unchanged.
+      setStationVerifyError(
+        errorMessage(err, "Couldn't save the changes. Try again."),
       );
     } finally {
       setSavingStation(false);
     }
   };
 
-  const handleSetStationActive = async (station, isActive) => {
+  const handleSetStationActive = async (station, isActive, adminPassword) => {
     // One toggle at a time: a double-click must never fire a second
     // PATCH for the same (or another) row.
     if (pendingToggleId != null) return;
@@ -442,22 +469,58 @@ export default function StationManagement({ embedded = false }) {
     flashError(null);
     setBannerOk(null);
     try {
-      await setStationActive(station.id, isActive);
-      setConfirmStationId(null);
+      await setStationActive(
+        station.id,
+        isActive,
+        adminPassword ? { adminPassword } : {},
+      );
+      setDeactivateTarget(null);
+      setDeactivateError(null);
       flashOk(isActive ? "Station activated." : "Station deactivated.");
       await load();
     } catch (err) {
-      setConfirmStationId(null);
-      flashError(errorMessage(err, "Couldn't update the station status. Try again."));
+      const message = errorMessage(
+        err,
+        "Couldn't update the station status. Try again.",
+      );
+      if (!isActive) {
+        // Deactivation runs from the verification dialog — keep it
+        // open so a wrong password can be corrected without
+        // re-opening anything. The station stays active.
+        setDeactivateError(message);
+      } else {
+        setDeactivateTarget(null);
+        flashError(message);
+      }
     } finally {
       setPendingToggleId(null);
     }
   };
 
-  const openAddUnit = (stationId) => {
-    setUnitForm({ id: "", name: "" });
-    setUnitModalError(null);
-    setUnitModal({ mode: "add", stationId });
+  // Inline "Add Unit" inside the Edit Station modal — the same
+  // POST /api/stations/:id/units flow the old panel used. Independent
+  // of the station-save flow: a unit add succeeds or fails on its
+  // own and is never claimed added without the backend confirming it.
+  const handleAddUnitInline = async () => {
+    if (addingUnit) return;
+    const id = newUnitForm.id.trim();
+    const name = newUnitForm.name.trim();
+    if (!id || !name) {
+      setUnitAddError("Unit ID and name are required.");
+      return;
+    }
+    setAddingUnit(true);
+    setUnitAddError(null);
+    try {
+      await addUnit(stationModal.station.id, { id, name });
+      setNewUnitForm({ id: "", name: "" });
+      flashOk("Unit added.");
+      await load();
+    } catch (err) {
+      setUnitAddError(errorMessage(err, "Couldn't add the unit. Try again."));
+    } finally {
+      setAddingUnit(false);
+    }
   };
 
   const openEditUnit = (stationId, unit) => {
@@ -470,29 +533,14 @@ export default function StationManagement({ embedded = false }) {
     setSavingUnit(true);
     setUnitModalError(null);
     try {
-      if (unitModal.mode === "add") {
-        await addUnit(unitModal.stationId, {
-          id: unitForm.id.trim(),
-          name: unitForm.name.trim(),
-        });
-        flashOk("Unit added.");
-      } else {
-        await updateUnit(unitModal.stationId, unitModal.unit.id, {
-          name: unitForm.name.trim(),
-        });
-        flashOk("Unit updated.");
-      }
+      await updateUnit(unitModal.stationId, unitModal.unit.id, {
+        name: unitForm.name.trim(),
+      });
+      flashOk("Unit updated.");
       setUnitModal(null);
       await load();
     } catch (err) {
-      setUnitModalError(
-        errorMessage(
-          err,
-          unitModal.mode === "add"
-            ? "Couldn't add the unit. Try again."
-            : "Couldn't save the changes. Try again.",
-        ),
-      );
+      setUnitModalError(errorMessage(err, "Couldn't save the changes. Try again."));
     } finally {
       setSavingUnit(false);
     }
@@ -516,8 +564,11 @@ export default function StationManagement({ embedded = false }) {
     }
   };
 
-  const unitsStation = unitsForStationId
-    ? stations.find((s) => s.id === unitsForStationId)
+  // Fresh copy of the station being edited (kept current through
+  // load() after mutations — e.g. an inline unit add refreshes the
+  // modal's units list without losing unsaved station-field edits).
+  const editStation = stationModal?.mode === "edit"
+    ? stations.find((s) => s.id === stationModal.station.id) ?? stationModal.station
     : null;
 
   const Heading = embedded ? "h2" : "h1";
@@ -631,48 +682,22 @@ export default function StationManagement({ embedded = false }) {
                       <td className="py-2.5 text-right">
                         <span className="flex justify-end gap-2">
                           <button
-                            onClick={() =>
-                              setUnitsForStationId(
-                                unitsForStationId === station.id ? null : station.id,
-                              )
-                            }
-                            className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink"
-                          >
-                            {unitsForStationId === station.id ? "Hide Units" : "Units"}
-                          </button>
-                          <button
                             onClick={() => openEditStation(station)}
                             className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink"
                           >
                             Edit
                           </button>
                           {active ? (
-                            confirmStationId === station.id ? (
-                              <>
-                                <button
-                                  onClick={() => handleSetStationActive(station, false)}
-                                  disabled={pendingToggleId != null}
-                                  className="rounded-md border border-fire/40 bg-fire/10 px-2 py-1 text-xs font-semibold text-fire disabled:opacity-60"
-                                >
-                                  Confirm deactivate
-                                </button>
-                                <button
-                                  onClick={() => setConfirmStationId(null)}
-                                  disabled={pendingToggleId != null}
-                                  className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink disabled:opacity-60"
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                onClick={() => setConfirmStationId(station.id)}
-                                disabled={pendingToggleId != null}
-                                className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-fire disabled:opacity-60"
-                              >
-                                Deactivate
-                              </button>
-                            )
+                            <button
+                              onClick={() => {
+                                setDeactivateError(null);
+                                setDeactivateTarget(station);
+                              }}
+                              disabled={pendingToggleId != null}
+                              className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-fire disabled:opacity-60"
+                            >
+                              Deactivate
+                            </button>
                           ) : (
                             <button
                               onClick={() => handleSetStationActive(station, true)}
@@ -692,105 +717,6 @@ export default function StationManagement({ embedded = false }) {
           </div>
         )}
 
-        {/* Assigned-units panel for the selected station */}
-        {unitsStation && (
-          <section
-            aria-label={`Assigned units for ${unitsStation.name}`}
-            className="mt-6 rounded-lg border border-border bg-panel p-5"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold uppercase tracking-wide">
-                  Assigned Units — {unitsStation.name}
-                </h3>
-                <p className="mt-1 font-mono text-xs text-ink-dim">{unitsStation.id}</p>
-              </div>
-              <button
-                onClick={() => openAddUnit(unitsStation.id)}
-                className="rounded-md bg-medical px-3 py-2 text-sm font-semibold text-bg transition-opacity hover:opacity-90"
-              >
-                Add Unit
-              </button>
-            </div>
-
-            {normalizeUnits(unitsStation).length === 0 ? (
-              <p className="mt-4 text-center text-sm text-ink-dim">
-                No units assigned yet.
-              </p>
-            ) : (
-              <table className="mt-4 w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-dim">
-                    <th className="py-2 pr-3">Unit</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {normalizeUnits(unitsStation).map((unit) => (
-                    <tr key={unit.id} className="border-b border-border">
-                      <td className="py-2.5 pr-3">
-                        <div className="font-medium">{unit.name}</div>
-                        <div className="font-mono text-xs text-ink-dim">{unit.id}</div>
-                      </td>
-                      <td className="py-2.5 pr-3">{statusBadge(unit.isActive)}</td>
-                      <td className="py-2.5 text-right">
-                        <span className="flex justify-end gap-2">
-                          <button
-                            onClick={() => openEditUnit(unitsStation.id, unit)}
-                            className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink"
-                          >
-                            Edit
-                          </button>
-                          {unit.isActive !== false ? (
-                            confirmUnitId === unit.id ? (
-                              <>
-                                <button
-                                  onClick={() =>
-                                    handleSetUnitActive(unitsStation.id, unit, false)
-                                  }
-                                  disabled={pendingUnitToggleId != null}
-                                  className="rounded-md border border-fire/40 bg-fire/10 px-2 py-1 text-xs font-semibold text-fire disabled:opacity-60"
-                                >
-                                  Confirm deactivate
-                                </button>
-                                <button
-                                  onClick={() => setConfirmUnitId(null)}
-                                  disabled={pendingUnitToggleId != null}
-                                  className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink disabled:opacity-60"
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                onClick={() => setConfirmUnitId(unit.id)}
-                                disabled={pendingUnitToggleId != null}
-                                className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-fire disabled:opacity-60"
-                              >
-                                Deactivate
-                              </button>
-                            )
-                          ) : (
-                            <button
-                              onClick={() =>
-                                handleSetUnitActive(unitsStation.id, unit, true)
-                              }
-                              disabled={pendingUnitToggleId != null}
-                              className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink disabled:opacity-60"
-                            >
-                              Activate
-                            </button>
-                          )}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </section>
-        )}
       </div>
 
       {stationModal && (
@@ -802,12 +728,184 @@ export default function StationManagement({ embedded = false }) {
           saving={savingStation}
           onCancel={() => setStationModal(null)}
           onSubmit={handleSaveStation}
+        >
+          {/* Assigned units live inside the edit modal — view, add,
+              rename, deactivate. Add mode has no station yet. */}
+          {editStation && (
+            <div
+              aria-label={`Assigned units for ${editStation.name}`}
+              className="border-t border-border pt-4"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs uppercase tracking-wide text-ink-dim">
+                  Assigned Units
+                </h3>
+                <span className="font-mono text-xs text-ink-dim">{editStation.id}</span>
+              </div>
+
+              {normalizeUnits(editStation).length === 0 ? (
+                <p className="mt-3 text-center text-sm text-ink-dim">
+                  No units assigned yet.
+                </p>
+              ) : (
+                <ul className="mt-3 divide-y divide-border rounded-md border border-border">
+                  {normalizeUnits(editStation).map((unit) => (
+                    <li
+                      key={unit.id}
+                      className="flex items-center justify-between gap-2 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{unit.name}</div>
+                        <div className="font-mono text-xs text-ink-dim">{unit.id}</div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {statusBadge(unit.isActive)}
+                        <button
+                          onClick={() => openEditUnit(editStation.id, unit)}
+                          className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink"
+                        >
+                          Edit
+                        </button>
+                        {unit.isActive !== false ? (
+                          confirmUnitId === unit.id ? (
+                            <>
+                              <button
+                                onClick={() => handleSetUnitActive(editStation.id, unit, false)}
+                                disabled={pendingUnitToggleId != null}
+                                className="rounded-md border border-fire/40 bg-fire/10 px-2 py-1 text-xs font-semibold text-fire disabled:opacity-60"
+                              >
+                                Confirm deactivate
+                              </button>
+                              <button
+                                onClick={() => setConfirmUnitId(null)}
+                                disabled={pendingUnitToggleId != null}
+                                className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink disabled:opacity-60"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmUnitId(unit.id)}
+                              disabled={pendingUnitToggleId != null}
+                              className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-fire disabled:opacity-60"
+                            >
+                              Deactivate
+                            </button>
+                          )
+                        ) : (
+                          <button
+                            onClick={() => handleSetUnitActive(editStation.id, unit, true)}
+                            disabled={pendingUnitToggleId != null}
+                            className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink disabled:opacity-60"
+                          >
+                            Activate
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Inline add — same POST /api/stations/:id/units flow as
+                  the old panel button. Independent of Save Changes: a
+                  unit add succeeds or fails on its own and never claims
+                  success without the backend confirming it. */}
+              <div className="mt-3 rounded-md border border-border p-3">
+                <h4 className="text-xs uppercase tracking-wide text-ink-dim">
+                  Add Unit
+                </h4>
+                <div className="mt-2 grid gap-2">
+                  <input
+                    type="text"
+                    aria-label="New Unit ID"
+                    placeholder="Unit ID (unique within this station)"
+                    value={newUnitForm.id}
+                    onChange={(e) => setNewUnitForm({ ...newUnitForm, id: e.target.value })}
+                    className="w-full rounded-md border border-border bg-bg px-3 py-2 font-mono text-sm focus:border-medical focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    aria-label="New Unit Name"
+                    placeholder="Unit Name"
+                    value={newUnitForm.name}
+                    onChange={(e) => setNewUnitForm({ ...newUnitForm, name: e.target.value })}
+                    className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+                  />
+                </div>
+                {unitAddError && (
+                  <p className="mt-2 text-xs text-fire">{unitAddError}</p>
+                )}
+                <button
+                  onClick={handleAddUnitInline}
+                  disabled={
+                    addingUnit ||
+                    newUnitForm.id.trim().length === 0 ||
+                    newUnitForm.name.trim().length === 0
+                  }
+                  className="mt-3 rounded-md bg-medical px-3 py-1.5 text-xs font-semibold text-bg transition-opacity hover:opacity-90 disabled:opacity-60"
+                >
+                  {addingUnit ? "Adding…" : "Add Unit"}
+                </button>
+              </div>
+            </div>
+          )}
+        </StationFormModal>
+      )}
+
+      {verifyingStationEdit && stationModal && (
+        <AdminPasswordModal
+          ariaLabel="Verify Admin Password"
+          title="Confirm Station Changes"
+          description={
+            <p className="text-sm">
+              Save your changes to{" "}
+              <span className="font-semibold">{stationModal.station.name}</span>?
+            </p>
+          }
+          confirmLabel="Save Changes"
+          savingLabel="Saving…"
+          tone="primary"
+          saving={savingStation}
+          error={stationVerifyError}
+          onCancel={() => {
+            setVerifyingStationEdit(false);
+            setStationVerifyError(null);
+          }}
+          onSubmit={commitStationEdit}
+        />
+      )}
+
+      {deactivateTarget && (
+        <AdminPasswordModal
+          ariaLabel="Deactivate Station"
+          title="Deactivate Station"
+          description={
+            <p className="text-sm">
+              Deactivate{" "}
+              <span className="font-semibold">{deactivateTarget.name}</span>?
+              Dispatching to this station stops until it is reactivated —
+              dispatch history is preserved.
+            </p>
+          }
+          confirmLabel="Confirm Deactivate"
+          savingLabel="Deactivating…"
+          saving={pendingToggleId != null}
+          error={deactivateError}
+          onCancel={() => {
+            setDeactivateTarget(null);
+            setDeactivateError(null);
+          }}
+          onSubmit={(adminPassword) =>
+            handleSetStationActive(deactivateTarget, false, adminPassword)
+          }
         />
       )}
 
       {unitModal && (
         <UnitFormModal
-          mode={unitModal.mode}
+          unit={unitModal.unit}
           form={unitForm}
           setForm={setUnitForm}
           error={unitModalError}
