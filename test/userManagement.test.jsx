@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import UserManagement from "../src/components/UserManagement";
 import Header from "../src/components/Header";
 
@@ -55,12 +55,16 @@ describe("UserManagement", () => {
 
     expect(await screen.findByText("admin@marikina.gov.ph")).toBeTruthy();
     expect(screen.getByText("fire@marikina.gov.ph")).toBeTruthy();
-    expect(screen.getByText("ALL")).toBeTruthy();
-    expect(screen.getByText("FIRE")).toBeTruthy();
-    expect(screen.getByText("admin")).toBeTruthy();
-    expect(screen.getByText("dispatcher")).toBeTruthy();
-    expect(screen.getByText("Enabled")).toBeTruthy();
-    expect(screen.getByText("Disabled")).toBeTruthy();
+    // Row assertions are scoped to the table — the search/filter bar
+    // reuses the same words ("ALL" agency option, "Disabled" status
+    // option) outside of it.
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("ALL")).toBeTruthy();
+    expect(within(table).getByText("FIRE")).toBeTruthy();
+    expect(within(table).getByText("admin")).toBeTruthy();
+    expect(within(table).getByText("dispatcher")).toBeTruthy();
+    expect(within(table).getByText("Enabled")).toBeTruthy();
+    expect(within(table).getByText("Disabled")).toBeTruthy();
   });
 
   it("4. the Add Account form submits createUser with email, password, agency, role", async () => {
@@ -148,9 +152,11 @@ describe("UserManagement", () => {
     render(<UserManagement />);
     fireEvent.click(await screen.findByText("Edit"));
 
-    expect(screen.getByLabelText("Email").value).toBe("admin@marikina.gov.ph");
-    expect(screen.getByLabelText("Agency").value).toBe("ALL");
-    expect(screen.getByLabelText("Role").value).toBe("admin");
+    // Scoped to the dialog — the filter bar has its own Agency/Role labels.
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByLabelText("Email").value).toBe("admin@marikina.gov.ph");
+    expect(within(dialog).getByLabelText("Agency").value).toBe("ALL");
+    expect(within(dialog).getByLabelText("Role").value).toBe("admin");
     // Edit must never ask for or expose a password.
     expect(screen.queryByLabelText("Password")).toBeNull();
   });
@@ -161,7 +167,7 @@ describe("UserManagement", () => {
 
     render(<UserManagement />);
     fireEvent.click(await screen.findByText("Edit"));
-    fireEvent.change(screen.getByLabelText("Agency"), {
+    fireEvent.change(within(screen.getByRole("dialog")).getByLabelText("Agency"), {
       target: { value: "MEDICAL" },
     });
     fireEvent.click(screen.getByText("Save Changes"));
@@ -221,8 +227,9 @@ describe("UserManagement", () => {
     });
     fireEvent.click(screen.getByText("Confirm Disable"));
 
+    // The raw backend message is translated for the admin.
     expect(
-      await screen.findByText("Administrator password is incorrect."),
+      await screen.findByText("That password is incorrect. Please enter your current administrator password and try again."),
     ).toBeTruthy();
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(setUserEnabled).toHaveBeenCalledTimes(1);
@@ -378,6 +385,246 @@ describe("UserManagement — load error recovery", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/couldn't load accounts/i);
     expect(screen.getByText("fire@marikina.gov.ph")).toBeTruthy();
+  });
+});
+
+describe("UserManagement — search, filters, selection, and bulk disable", () => {
+  const self = makeUser(); // uid-1, admin — the signed-in administrator
+  const fire = makeUser({
+    uid: "uid-2",
+    email: "fire@marikina.gov.ph",
+    agency: "FIRE",
+    role: "dispatcher",
+  });
+  const flood = makeUser({
+    uid: "uid-3",
+    email: "flood@marikina.gov.ph",
+    agency: "FLOOD",
+    role: "dispatcher",
+  });
+  const retired = makeUser({
+    uid: "uid-4",
+    email: "old@marikina.gov.ph",
+    agency: "MEDICAL",
+    role: "dispatcher",
+    disabled: true,
+  });
+  const all = [self, fire, flood, retired];
+  const currentUser = { uid: "uid-1", email: "admin@marikina.gov.ph", agency: "ALL", role: "admin" };
+
+  const renderAs = (users = all) => {
+    listUsers.mockResolvedValue(users);
+    render(<UserManagement currentUser={currentUser} />);
+    return screen.findByText("old@marikina.gov.ph");
+  };
+
+  const selectAccount = (email) => {
+    fireEvent.click(screen.getByLabelText(`Select ${email}`));
+  };
+
+  const openBulkDialog = async (emails) => {
+    await renderAs();
+    for (const email of emails) selectAccount(email);
+    fireEvent.click(screen.getByText("Disable Selected"));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.getAttribute("aria-label")).toBe("Disable Selected Accounts");
+    return dialog;
+  };
+
+  const confirmWith = (dialog, password) => {
+    fireEvent.change(within(dialog).getByLabelText("Your Current Password"), {
+      target: { value: password },
+    });
+    fireEvent.click(within(dialog).getByText(/Disable \d+ Accounts?/));
+  };
+
+  it("searches by email case-insensitively, trims whitespace, and never refetches while typing", async () => {
+    await renderAs();
+
+    fireEvent.change(screen.getByLabelText("Search by email"), {
+      target: { value: "  FIRE@MARIKINA " },
+    });
+
+    expect(screen.getByText("fire@marikina.gov.ph")).toBeTruthy();
+    expect(screen.queryByText("admin@marikina.gov.ph")).toBeNull();
+    expect(screen.queryByText("flood@marikina.gov.ph")).toBeNull();
+    // Client-side only: the list was fetched once, typing fires nothing.
+    expect(listUsers).toHaveBeenCalledTimes(1);
+  });
+
+  it("filters by agency, role, and status — combined with search", async () => {
+    await renderAs();
+
+    fireEvent.change(screen.getByLabelText("Agency"), { target: { value: "FLOOD" } });
+    expect(screen.getByText("flood@marikina.gov.ph")).toBeTruthy();
+    expect(screen.queryByText("fire@marikina.gov.ph")).toBeNull();
+
+    // Role narrows further; status incompatible with the match empties the list.
+    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "admin" } });
+    expect(
+      await screen.findByText("No accounts match your search or filters."),
+    ).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "all" } });
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "disabled" } });
+    expect(await screen.findByText("No accounts match your search or filters.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Agency"), { target: { value: "all" } });
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "disabled" } });
+    expect(await screen.findByText("old@marikina.gov.ph")).toBeTruthy();
+    expect(screen.queryByText("fire@marikina.gov.ph")).toBeNull();
+  });
+
+  it("resetting filters returns to the full list", async () => {
+    await renderAs();
+
+    fireEvent.change(screen.getByLabelText("Search by email"), {
+      target: { value: "no-such-user" },
+    });
+    expect(await screen.findByText("No accounts match your search or filters.")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Reset filters"));
+    expect(await screen.findByText("admin@marikina.gov.ph")).toBeTruthy();
+    expect(screen.getByText("fire@marikina.gov.ph")).toBeTruthy();
+    expect(screen.queryByText("No accounts match your search or filters.")).toBeNull();
+  });
+
+  it("only eligible accounts get checkboxes; the admin's own and disabled accounts are excluded", async () => {
+    await renderAs();
+
+    expect(screen.getByLabelText("Select fire@marikina.gov.ph")).toBeTruthy();
+    expect(screen.getByLabelText("Select flood@marikina.gov.ph")).toBeTruthy();
+    // Own account: marked, never selectable for bulk disable.
+    expect(screen.queryByLabelText("Select admin@marikina.gov.ph")).toBeNull();
+    expect(screen.getByText("(you)")).toBeTruthy();
+    // Already-disabled accounts can't be selected for another disable.
+    expect(screen.queryByLabelText("Select old@marikina.gov.ph")).toBeNull();
+  });
+
+  it("select-all covers only eligible accounts in the current filter, and toggles off", async () => {
+    await renderAs();
+
+    fireEvent.click(screen.getByLabelText("Select all eligible accounts"));
+    expect(screen.getByText("2 accounts selected.")).toBeTruthy();
+    expect(screen.getByLabelText("Select fire@marikina.gov.ph").checked).toBe(true);
+    expect(screen.getByLabelText("Select flood@marikina.gov.ph").checked).toBe(true);
+
+    // Narrow the filter: select-all state follows the visible set.
+    fireEvent.change(screen.getByLabelText("Agency"), { target: { value: "FIRE" } });
+    fireEvent.click(screen.getByLabelText("Select all eligible accounts"));
+    expect(screen.getByText("1 account selected.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Agency"), { target: { value: "all" } });
+    fireEvent.click(screen.getByLabelText("Select all eligible accounts"));
+    expect(screen.getByText("2 accounts selected.")).toBeTruthy();
+  });
+
+  it("Disable Selected stays disabled with nothing selected and names the affected count", async () => {
+    await renderAs();
+
+    expect(screen.getByText("Disable Selected").disabled).toBe(true);
+    expect(screen.getByText("No accounts selected.")).toBeTruthy();
+
+    selectAccount("fire@marikina.gov.ph");
+    selectAccount("flood@marikina.gov.ph");
+    expect(screen.getByText("2 accounts selected.")).toBeTruthy();
+    expect(screen.getByText("Disable Selected").disabled).toBe(false);
+
+    fireEvent.click(screen.getByText("Disable Selected"));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("Disable 2 accounts");
+    expect(dialog.textContent).toContain("fire@marikina.gov.ph");
+    expect(dialog.textContent).toContain("flood@marikina.gov.ph");
+    expect(setUserEnabled).not.toHaveBeenCalled();
+  });
+
+  it("bulk disable sends one verified request per account, then refreshes and clears the selection", async () => {
+    setUserEnabled.mockResolvedValue({ success: true, message: "User disabled." });
+    const dialog = await openBulkDialog(["fire@marikina.gov.ph", "flood@marikina.gov.ph"]);
+
+    confirmWith(dialog, "AdminPass!xK9pQ2");
+
+    await waitFor(() =>
+      expect(setUserEnabled).toHaveBeenCalledWith("uid-2", false, {
+        adminPassword: "AdminPass!xK9pQ2",
+      }),
+    );
+    expect(setUserEnabled).toHaveBeenCalledWith("uid-3", false, {
+      adminPassword: "AdminPass!xK9pQ2",
+    });
+    expect(setUserEnabled).toHaveBeenCalledTimes(2);
+    // Every request carries the password in the body — never a bare flag.
+    for (const call of setUserEnabled.mock.calls) {
+      expect(call[2]).toEqual({ adminPassword: "AdminPass!xK9pQ2" });
+    }
+
+    expect(await screen.findByText("Disabled 2 accounts.")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(listUsers).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("No accounts selected.")).toBeTruthy();
+  });
+
+  it("canceling the bulk dialog performs no protected change", async () => {
+    const dialog = await openBulkDialog(["fire@marikina.gov.ph"]);
+
+    fireEvent.click(within(dialog).getByText("Cancel"));
+
+    expect(setUserEnabled).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByText(/Disabled \d+ of/)).toBeNull();
+    expect(screen.queryByText("Disabled 1 account.")).toBeNull();
+  });
+
+  it("a wrong bulk password changes nothing and keeps the dialog open for correction", async () => {
+    setUserEnabled.mockRejectedValue({
+      response: { data: { message: "Administrator password is incorrect." } },
+    });
+    const dialog = await openBulkDialog(["fire@marikina.gov.ph", "flood@marikina.gov.ph"]);
+
+    confirmWith(dialog, "WrongPass!123");
+
+    expect(
+      await screen.findByText("That password is incorrect. Please enter your current administrator password and try again."),
+    ).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    // Both requests were attempted (and rejected) — but nothing
+    // succeeded, so no success banner and no list refresh.
+    expect(setUserEnabled).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/Disabled \d+/)).toBeNull();
+    expect(listUsers).toHaveBeenCalledTimes(1);
+  });
+
+  it("partial bulk failures report exactly which accounts failed and keep only those selected", async () => {
+    setUserEnabled.mockImplementation((uid) =>
+      uid === "uid-2"
+        ? Promise.resolve({ success: true, message: "User disabled." })
+        : Promise.reject({ response: { data: { message: "User not found." } } }),
+    );
+    // After the refresh the failed account is still enabled (eligible),
+    // the succeeded one is disabled.
+    listUsers
+      .mockResolvedValueOnce(all)
+      .mockResolvedValueOnce([
+        self,
+        { ...fire, disabled: true },
+        flood,
+        retired,
+      ]);
+    render(<UserManagement currentUser={currentUser} />);
+    await screen.findByText("old@marikina.gov.ph");
+
+    selectAccount("fire@marikina.gov.ph");
+    selectAccount("flood@marikina.gov.ph");
+    fireEvent.click(screen.getByText("Disable Selected"));
+    confirmWith(screen.getByRole("dialog"), "AdminPass!xK9pQ2");
+
+    expect(await screen.findByText("Disabled 1 of 2 accounts.")).toBeTruthy();
+    const failure = await screen.findByText(/Couldn't disable 1 account:/);
+    expect(failure.textContent).toContain("flood@marikina.gov.ph");
+    // Only the failure stays selected — a retry can't re-disable the success.
+    expect(screen.getByText("1 account selected.")).toBeTruthy();
+    expect(screen.getByLabelText("Select flood@marikina.gov.ph").checked).toBe(true);
+    expect(screen.queryByLabelText("Select fire@marikina.gov.ph")).toBeNull();
   });
 });
 
@@ -639,7 +886,7 @@ describe("UserManagement — admin Change Password action", () => {
     // Error surfaces in the verification dialog, which stays open —
     // the account password is unchanged.
     expect(
-      await screen.findByText("Administrator password is incorrect."),
+      await screen.findByText("That password is incorrect. Please enter your current administrator password and try again."),
     ).toBeTruthy();
     expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe(
       "Verify Admin Password",

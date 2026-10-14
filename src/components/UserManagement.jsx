@@ -8,6 +8,7 @@ import {
   adminSetUserPassword,
 } from "../lib/api";
 import { isStrongPassword } from "../lib/passwordPolicy";
+import { errorMessage } from "../lib/errorMessages";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import AdminPasswordModal from "./AdminPasswordModal";
 import PasswordRequirements from "./PasswordRequirements";
@@ -22,8 +23,44 @@ const ROLES = [
   { value: "admin", label: "Admin" },
 ];
 
-const errorMessage = (err, fallback) =>
-  err?.response?.data?.message || fallback;
+// Bulk-disable confirmation: one password entry, then one
+// server-verified PATCH per account (PATCH /api/users/:uid/status).
+// The dialog names exactly how many accounts are affected; the admin's
+// own account can never be part of the selection (see isEligible).
+function BulkDisableAccountsModal({ targets, saving, error, onCancel, onSubmit }) {
+  return (
+    <AdminPasswordModal
+      ariaLabel="Disable Selected Accounts"
+      title="Disable Selected Accounts"
+      description={
+        <div className="space-y-1 text-sm">
+          <p>
+            Disable{" "}
+            <span className="font-semibold">
+              {targets.length} {targets.length === 1 ? "account" : "accounts"}
+            </span>
+            ? The affected accounts can no longer sign in until they are
+            enabled again.
+          </p>
+          <ul className="max-h-28 list-disc overflow-y-auto pl-5 text-ink-dim">
+            {targets.slice(0, 8).map((user) => (
+              <li key={user.uid} className="break-all">{user.email}</li>
+            ))}
+          </ul>
+          {targets.length > 8 && (
+            <p className="text-ink-dim">…and {targets.length - 8} more.</p>
+          )}
+        </div>
+      }
+      confirmLabel={`Disable ${targets.length} ${targets.length === 1 ? "Account" : "Accounts"}`}
+      savingLabel="Disabling…"
+      saving={saving}
+      error={error}
+      onCancel={onCancel}
+      onSubmit={onSubmit}
+    />
+  );
+}
 
 // TriageModal-style overlay form for add/edit. Password exists for
 // ADD ONLY — editing an account never touches a password. The add
@@ -368,15 +405,28 @@ function AdminSetPasswordModal({ user, onCancel }) {
 // standalone (default) it owns its full-page scroll wrapper; embedded
 // inside Settings it renders just its content, letting the Settings
 // section own the scroll/padding instead of nesting two scroll areas.
-export default function UserManagement({ embedded = false }) {
+// currentUser is the signed-in admin (Settings passes authState.user
+// down). It is used ONLY to keep the admin's own account out of bulk
+// selection — single-account disable behavior is unchanged.
+export default function UserManagement({ embedded = false, currentUser = null }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [bannerError, setBannerError] = useState(null);
   const [bannerSuccess, setBannerSuccess] = useState(null);
-  // { mode: "add" } | { mode: "edit", user } | { mode: "disable", user }
+  // { mode: "add" } | { mode: "edit", user } | { mode: "disable", user } | { mode: "bulk-disable", targets }
   const [modal, setModal] = useState(null);
   const [passwordTarget, setPasswordTarget] = useState(null); // user for AdminSetPasswordModal
+  // Search + filters apply client-side to the already-loaded list —
+  // typing never fires another request.
+  const [search, setSearch] = useState("");
+  const [agencyFilter, setAgencyFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  // Bulk selection: uids only (re-resolved against fresh data at
+  // commit time, so a stale row can never be acted on blindly).
+  const [selectedUids, setSelectedUids] = useState([]);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -392,15 +442,27 @@ export default function UserManagement({ embedded = false }) {
     setLoading(true);
     setLoadError(null);
     try {
-      setUsers(await listUsers());
+      const list = await listUsers();
+      setUsers(list);
+      // Reconcile selection against fresh truth: drop accounts that
+      // vanished or are no longer disable-eligible (enabled state may
+      // have changed elsewhere).
+      setSelectedUids((prev) =>
+        prev.filter((uid) => {
+          const fresh = list.find((u) => u.uid === uid);
+          return fresh && !fresh.disabled && fresh.uid !== currentUser?.uid;
+        }),
+      );
+      return list;
     } catch (err) {
       setLoadError(
         errorMessage(err, "Couldn't load accounts. Check your connection and try again."),
       );
+      return null;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUser?.uid]);
 
   useEffect(() => {
     load();
@@ -513,6 +575,131 @@ export default function UserManagement({ embedded = false }) {
     }
   };
 
+  // An account is bulk-disable eligible only when it is currently
+  // enabled AND is not the signed-in admin's own account. The backend
+  // (verifyAuth + requireAdmin + per-request adminPassword reauth)
+  // remains the real authorization boundary; this just keeps
+  // ineligible rows out of the selection in the first place.
+  const isEligible = (user) =>
+    !user.disabled && user.uid !== currentUser?.uid;
+
+  // Agency options come from the loaded data itself (distinct values
+  // actually present), never a hardcoded list.
+  const agencyOptions = [...new Set(users.map((u) => u.agency).filter(Boolean))].sort();
+
+  const filteredUsers = users.filter((user) => {
+    const needle = search.trim().toLowerCase();
+    if (needle && !(user.email || "").toLowerCase().includes(needle)) return false;
+    if (agencyFilter !== "all" && user.agency !== agencyFilter) return false;
+    if (roleFilter !== "all" && user.role !== roleFilter) return false;
+    if (statusFilter === "active" && user.disabled) return false;
+    if (statusFilter === "disabled" && !user.disabled) return false;
+    return true;
+  });
+
+  const filtersActive =
+    search.trim() !== "" || agencyFilter !== "all" || roleFilter !== "all" || statusFilter !== "all";
+
+  const resetFilters = () => {
+    setSearch("");
+    setAgencyFilter("all");
+    setRoleFilter("all");
+    setStatusFilter("all");
+  };
+
+  const eligibleFiltered = filteredUsers.filter(isEligible);
+  const selectedSet = new Set(selectedUids);
+  const allEligibleSelected =
+    eligibleFiltered.length > 0 &&
+    eligibleFiltered.every((u) => selectedSet.has(u.uid));
+
+  const toggleSelect = (uid) => {
+    setSelectedUids((prev) =>
+      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid],
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (allEligibleSelected) {
+      const eligibleIds = new Set(eligibleFiltered.map((u) => u.uid));
+      setSelectedUids((prev) => prev.filter((uid) => !eligibleIds.has(uid)));
+    } else {
+      setSelectedUids((prev) => [
+        ...prev,
+        ...eligibleFiltered.map((u) => u.uid).filter((uid) => !prev.includes(uid)),
+      ]);
+    }
+  };
+
+  const openBulkDisable = () => {
+    // Resolve the selection against CURRENT data — never trust a
+    // stale snapshot for a protected action.
+    const targets = users.filter((u) => selectedSet.has(u.uid) && isEligible(u));
+    if (targets.length === 0) {
+      setBannerError("Select at least one eligible account to disable.");
+      return;
+    }
+    setModalError(null);
+    setBannerSuccess(null);
+    setBannerError(null);
+    setModal({ mode: "bulk-disable", targets });
+  };
+
+  // Bulk disable: one password entry, then ONE server-verified request
+  // per account (each PATCH re-verifies the admin password and the
+  // admin's authority server-side — never a frontend-only flag).
+  // Sequential so failures are attributable per account; successes and
+  // failures are each reported by name, never lumped together.
+  const handleBulkDisable = async (targets, adminPassword) => {
+    if (bulkSaving) return;
+    setBulkSaving(true);
+    setModalError(null);
+    const succeeded = [];
+    const failures = [];
+    for (const target of targets) {
+      try {
+        await setUserEnabled(target.uid, false, { adminPassword });
+        succeeded.push(target);
+      } catch (err) {
+        failures.push({
+          email: target.email,
+          message: errorMessage(err, "Couldn't disable this account. Try again."),
+        });
+      }
+    }
+    setBulkSaving(false);
+
+    if (succeeded.length === 0) {
+      // Total failure — most likely a wrong password. Stay in the
+      // dialog so it can be corrected and retried without reselecting.
+      const first = failures[0]?.message || "Couldn't disable the selected accounts. Try again.";
+      const sameForAll = failures.every((f) => f.message === first);
+      setModalError(
+        sameForAll
+          ? first
+          : `Couldn't disable any of the ${targets.length} selected accounts: ${failures.map((f) => `${f.email} (${f.message})`).join("; ")}`,
+      );
+      return;
+    }
+
+    // Partial or full success: close the dialog, refresh truth, keep
+    // ONLY the failures selected so a retry touches nothing twice.
+    setModal(null);
+    await load();
+    setSelectedUids(failures.map((f) => targets.find((t) => t.email === f.email)?.uid).filter(Boolean));
+    if (failures.length === 0) {
+      setBannerSuccess(
+        `Disabled ${succeeded.length} ${succeeded.length === 1 ? "account" : "accounts"}.`,
+      );
+      setBannerError(null);
+    } else {
+      setBannerSuccess(`Disabled ${succeeded.length} of ${targets.length} accounts.`);
+      setBannerError(
+        `Couldn't disable ${failures.length} ${failures.length === 1 ? "account" : "accounts"}: ${failures.map((f) => `${f.email} (${f.message})`).join("; ")}`,
+      );
+    }
+  };
+
   // Embedded: Settings already provides the scroll container and the
   // max-w wrapper — skip both so padding/scrollbars don't double up.
   const Heading = embedded ? "h2" : "h1";
@@ -534,6 +721,110 @@ export default function UserManagement({ embedded = false }) {
             Add Account
           </button>
         </div>
+
+        {/* Search + filters — client-side over the loaded list. */}
+        {users.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-end gap-2">
+            <div className="min-w-44 flex-1">
+              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="account-search">
+                Search by email
+              </label>
+              <input
+                id="account-search"
+                type="search"
+                placeholder="e.g. dispatcher@…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="account-agency-filter">
+                Agency
+              </label>
+              <select
+                id="account-agency-filter"
+                value={agencyFilter}
+                onChange={(e) => setAgencyFilter(e.target.value)}
+                className="mt-1 rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+              >
+                <option value="all">All</option>
+                {agencyOptions.map((agency) => (
+                  <option key={agency} value={agency}>
+                    {agency}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="account-role-filter">
+                Role
+              </label>
+              <select
+                id="account-role-filter"
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                className="mt-1 rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+              >
+                <option value="all">All</option>
+                <option value="admin">Admin</option>
+                <option value="dispatcher">Dispatcher</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="account-status-filter">
+                Status
+              </label>
+              <select
+                id="account-status-filter"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="mt-1 rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+              >
+                <option value="all">All</option>
+                <option value="active">Active</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </div>
+            {filtersActive && filteredUsers.length > 0 && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
+              >
+                Reset filters
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Bulk action bar — visible whenever there are accounts. */}
+        {users.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-sm text-ink-dim" aria-live="polite">
+              {selectedUids.length === 0
+                ? "No accounts selected."
+                : `${selectedUids.length} ${selectedUids.length === 1 ? "account" : "accounts"} selected.`}
+            </span>
+            <button
+              type="button"
+              onClick={openBulkDisable}
+              disabled={selectedUids.length === 0 || bulkSaving}
+              className="rounded-md border border-fire/40 bg-fire/10 px-3 py-1.5 text-sm font-semibold text-fire transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Disable Selected
+            </button>
+            {selectedUids.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedUids([])}
+                className="rounded-md border border-border px-3 py-1.5 text-sm text-ink-dim transition-colors hover:text-ink"
+              >
+                Clear selection
+              </button>
+            )}
+          </div>
+        )}
 
         {bannerSuccess && (
           <p className="mt-4 rounded border border-risk-low/40 bg-risk-low/10 p-3 text-sm text-risk-low">
@@ -596,10 +887,42 @@ export default function UserManagement({ embedded = false }) {
           <p className="mt-6 text-center text-sm text-ink-dim">No accounts found.</p>
         )}
 
-        {users.length > 0 && (
+        {!loading && !loadError && users.length > 0 && filteredUsers.length === 0 && (
+          <div className="mt-6 text-center">
+            <p className="text-sm text-ink-dim">
+              No accounts match your search or filters.
+            </p>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="mt-2 rounded-md border border-border px-3 py-1.5 text-sm text-ink-dim transition-colors hover:text-ink"
+            >
+              Reset filters
+            </button>
+          </div>
+        )}
+
+        {filteredUsers.length > 0 && (
           <table className="mt-4 w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-dim">
+                <th className="py-2 pr-3">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all eligible accounts"
+                    checked={allEligibleSelected}
+                    ref={(el) => {
+                      if (el) {
+                        el.indeterminate =
+                          !allEligibleSelected &&
+                          eligibleFiltered.some((u) => selectedSet.has(u.uid));
+                      }
+                    }}
+                    onChange={toggleSelectAll}
+                    disabled={eligibleFiltered.length === 0}
+                    className="h-4 w-4 accent-[#F97316]"
+                  />
+                </th>
                 <th className="py-2 pr-3">Email</th>
                 <th className="py-2 pr-3">Agency</th>
                 <th className="py-2 pr-3">Role</th>
@@ -608,9 +931,34 @@ export default function UserManagement({ embedded = false }) {
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => (
+              {filteredUsers.map((user) => (
                 <tr key={user.uid} className="border-b border-border">
-                  <td className="py-2.5 pr-3">{user.email}</td>
+                  <td className="py-2.5 pr-3">
+                    {isEligible(user) ? (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${user.email}`}
+                        checked={selectedSet.has(user.uid)}
+                        onChange={() => toggleSelect(user.uid)}
+                        className="h-4 w-4 accent-[#F97316]"
+                      />
+                    ) : (
+                      <span
+                        className="inline-block h-4 w-4"
+                        title={
+                          user.uid === currentUser?.uid
+                            ? "Your own account can't be bulk-disabled"
+                            : "Already disabled"
+                        }
+                      />
+                    )}
+                  </td>
+                  <td className="py-2.5 pr-3">
+                    {user.email}
+                    {user.uid === currentUser?.uid && (
+                      <span className="ml-1 text-xs text-ink-dim">(you)</span>
+                    )}
+                  </td>
                   <td className="py-2.5 pr-3">{user.agency}</td>
                   <td className="py-2.5 pr-3">{user.role}</td>
                   <td className="py-2.5 pr-3">
@@ -664,7 +1012,7 @@ export default function UserManagement({ embedded = false }) {
         )}
       </div>
 
-      {modal && modal.mode !== "disable" && (
+      {modal && (modal.mode === "add" || modal.mode === "edit") && (
         <UserFormModal
           mode={modal.mode}
           form={form}
@@ -685,6 +1033,19 @@ export default function UserManagement({ embedded = false }) {
           onSubmit={(adminPassword) =>
             handleSetEnabled(modal.user, false, adminPassword)
           }
+        />
+      )}
+
+      {modal && modal.mode === "bulk-disable" && (
+        <BulkDisableAccountsModal
+          targets={modal.targets}
+          saving={bulkSaving}
+          error={modalError}
+          onCancel={() => {
+            if (bulkSaving) return;
+            setModal(null);
+          }}
+          onSubmit={(adminPassword) => handleBulkDisable(modal.targets, adminPassword)}
         />
       )}
 

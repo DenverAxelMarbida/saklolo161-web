@@ -242,7 +242,8 @@ describe("ChangePasswordModal", () => {
     fillModal();
     fireEvent.click(screen.getByText("Update Password"));
 
-    expect(await screen.findByText("Current password is incorrect.")).toBeTruthy();
+    // The raw backend message is translated into actionable guidance.
+    expect(await screen.findByText("That password is incorrect. Please enter your current password and try again.")).toBeTruthy();
     await waitFor(() =>
       expect(screen.getByLabelText("Current Password").value).not.toBe(""),
     );

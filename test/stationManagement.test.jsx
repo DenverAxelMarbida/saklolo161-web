@@ -92,13 +92,15 @@ describe("StationManagement — station add/edit/activate", () => {
     render(<StationManagement embedded />);
     expect(await screen.findByText("River Park Authority")).toBeTruthy();
     fireEvent.click(screen.getByText("Add Station"));
-    fireEvent.change(screen.getByLabelText("Station ID"), {
+    // Scoped to the modal — the filter bar has its own Category label.
+    const modal = screen.getByLabelText("Add Station");
+    fireEvent.change(within(modal).getByLabelText("Station ID"), {
       target: { value: "MEDICAL_TEST_BASE" },
     });
-    fireEvent.change(screen.getByLabelText("Name"), {
+    fireEvent.change(within(modal).getByLabelText("Name"), {
       target: { value: "Test Medical Base" },
     });
-    fireEvent.change(screen.getByLabelText("Category"), {
+    fireEvent.change(within(modal).getByLabelText("Category"), {
       target: { value: "Medical" },
     });
   }
@@ -255,7 +257,7 @@ describe("StationManagement — station add/edit/activate", () => {
     await verifyAndConfirm("WrongPass!123", "Create Station");
 
     expect(
-      await screen.findByText("Administrator password is incorrect."),
+      await screen.findByText("That password is incorrect. Please enter your current administrator password and try again."),
     ).toBeTruthy();
     // Single request attempted and rejected — nothing persisted,
     // verify dialog stays for a corrected retry.
@@ -283,7 +285,7 @@ describe("StationManagement — station add/edit/activate", () => {
     fireEvent.click(screen.getByText("Create Station"));
     await verifyAndConfirm("AdminPass!xK9pQ2", "Create Station");
 
-    expect(await screen.findByText("Station X already exists.")).toBeTruthy();
+    expect(await screen.findByText('A station with the ID "X" already exists. Please use a different Station ID.')).toBeTruthy();
     expect(screen.queryByText("Station created.")).toBeNull();
     expect(stationApi.createStation).toHaveBeenCalledTimes(1);
   });
@@ -342,7 +344,7 @@ describe("StationManagement — station add/edit/activate", () => {
     fireEvent.click(within(verify).getByText("Save Changes"));
 
     expect(
-      await screen.findByText("Administrator password is incorrect."),
+      await screen.findByText("That password is incorrect. Please enter your current administrator password and try again."),
     ).toBeTruthy();
     verify = screen.getAllByRole("dialog").at(-1);
     expect(verify.getAttribute("aria-label")).toBe("Verify Admin Password");
@@ -410,7 +412,7 @@ describe("StationManagement — station add/edit/activate", () => {
     fireEvent.click(within(verify).getByText("Confirm Deactivate"));
 
     expect(
-      await screen.findByText("Administrator password is incorrect."),
+      await screen.findByText("That password is incorrect. Please enter your current administrator password and try again."),
     ).toBeTruthy();
     const stillOpen = screen.getAllByRole("dialog").at(-1);
     expect(stillOpen.getAttribute("aria-label")).toBe("Deactivate Station");
@@ -616,7 +618,7 @@ describe("StationManagement — assigned units (pending draft inside the Edit St
     await verifyAndConfirm("WrongPass!123");
 
     expect(
-      await screen.findByText("Administrator password is incorrect."),
+      await screen.findByText("That password is incorrect. Please enter your current administrator password and try again."),
     ).toBeTruthy();
     expect(stationApi.updateStation).toHaveBeenCalledTimes(1);
     expect(stationApi.updateUnit).not.toHaveBeenCalled();
@@ -767,5 +769,246 @@ describe("StationManagement — assigned units (pending draft inside the Edit St
 
     expect(stationApi.setUnitActive).not.toHaveBeenCalled();
     expect(within(panel).queryByText("Confirm deactivate")).toBeNull();
+  });
+});
+
+describe("StationManagement — search, filters, selection, and bulk deactivation", () => {
+  const stationA = {
+    id: "MED_ALPHA",
+    name: "Alpha Medical Base",
+    category: "Medical",
+    phone: "",
+    coords: null,
+    estimatedTurnout: "",
+    isActive: true,
+    assignedUnits: [{ id: "amb-a1", name: "Ambulance A1", isActive: true }],
+  };
+  const stationB = {
+    id: "FIRE_BRAVO",
+    name: "Bravo Fire Post",
+    category: "Fire",
+    phone: "",
+    coords: null,
+    estimatedTurnout: "",
+    isActive: true,
+    assignedUnits: [{ id: "eng-b1", name: "Engine B1", isActive: true }],
+  };
+  const stationOff = {
+    id: "FLOOD_OLD",
+    name: "Old River Outpost",
+    category: "Flood",
+    phone: "",
+    coords: null,
+    estimatedTurnout: "",
+    isActive: false,
+    assignedUnits: [],
+  };
+
+  const renderStations = async (list = [stationA, stationB, stationOff]) => {
+    stationApi.listStations.mockResolvedValue(structuredClone(list));
+    render(<StationManagement embedded />);
+    await screen.findByText(list[0].name);
+  };
+
+  const openBulkDialog = async () => {
+    fireEvent.click(screen.getByText("Deactivate Selected"));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.getAttribute("aria-label")).toBe("Deactivate Selected Stations");
+    return dialog;
+  };
+
+  const confirmBulkWith = (dialog, password, count) => {
+    fireEvent.change(within(dialog).getByLabelText("Your Current Password"), {
+      target: { value: password },
+    });
+    fireEvent.click(within(dialog).getByText(`Deactivate ${count} ${count === 1 ? "Station" : "Stations"}`));
+  };
+
+  it("searches by name case-insensitively, trims whitespace, and never refetches while typing", async () => {
+    await renderStations();
+
+    fireEvent.change(screen.getByLabelText("Search by name"), {
+      target: { value: "  bravo fire " },
+    });
+
+    expect(screen.getByText("Bravo Fire Post")).toBeTruthy();
+    expect(screen.queryByText("Alpha Medical Base")).toBeNull();
+    expect(screen.queryByText("Old River Outpost")).toBeNull();
+    expect(stationApi.listStations).toHaveBeenCalledTimes(1);
+  });
+
+  it("filters by category and activation status — combined with search", async () => {
+    await renderStations();
+
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "Medical" } });
+    expect(screen.getByText("Alpha Medical Base")).toBeTruthy();
+    expect(screen.queryByText("Bravo Fire Post")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "all" } });
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "deactivated" } });
+    expect(screen.getByText("Old River Outpost")).toBeTruthy();
+    expect(screen.queryByText("Alpha Medical Base")).toBeNull();
+
+    // Search + status together.
+    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "activated" } });
+    fireEvent.change(screen.getByLabelText("Search by name"), { target: { value: "outpost" } });
+    expect(await screen.findByText("No stations match your search or filters.")).toBeTruthy();
+  });
+
+  it("resetting filters returns to the full list", async () => {
+    await renderStations();
+
+    fireEvent.change(screen.getByLabelText("Search by name"), { target: { value: "zzz-no-match" } });
+    expect(await screen.findByText("No stations match your search or filters.")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Reset filters"));
+    expect(await screen.findByText("Alpha Medical Base")).toBeTruthy();
+    expect(screen.getByText("Bravo Fire Post")).toBeTruthy();
+    expect(screen.queryByText("No stations match your search or filters.")).toBeNull();
+  });
+
+  it("only active stations get checkboxes; deactivated stations are excluded", async () => {
+    await renderStations();
+
+    expect(screen.getByLabelText("Select Alpha Medical Base")).toBeTruthy();
+    expect(screen.getByLabelText("Select Bravo Fire Post")).toBeTruthy();
+    expect(screen.queryByLabelText("Select Old River Outpost")).toBeNull();
+  });
+
+  it("select-all covers only active stations in the current filter, and toggles off", async () => {
+    await renderStations();
+
+    fireEvent.click(screen.getByLabelText("Select all active stations"));
+    expect(screen.getByText("2 stations selected.")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Select all active stations"));
+    expect(screen.getByText("No stations selected.")).toBeTruthy();
+
+    // Narrow to one category — select-all follows the visible set.
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "Fire" } });
+    fireEvent.click(screen.getByLabelText("Select all active stations"));
+    expect(screen.getByText("1 station selected.")).toBeTruthy();
+    expect(screen.getByLabelText("Select Bravo Fire Post").checked).toBe(true);
+  });
+
+  it("Deactivate Selected stays disabled with nothing selected and names the affected count", async () => {
+    await renderStations();
+
+    expect(screen.getByText("Deactivate Selected").disabled).toBe(true);
+    expect(screen.getByText("No stations selected.")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Select all active stations"));
+    fireEvent.click(screen.getByText("Deactivate Selected"));
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("Deactivate 2 stations");
+    expect(dialog.textContent).toContain("Alpha Medical Base");
+    expect(dialog.textContent).toContain("Bravo Fire Post");
+    expect(stationApi.setStationActive).not.toHaveBeenCalled();
+  });
+
+  it("bulk deactivation sends one verified request per station, then refreshes and clears the selection", async () => {
+    stationApi.setStationActive.mockResolvedValue({ success: true });
+    await renderStations();
+
+    fireEvent.click(screen.getByLabelText("Select all active stations"));
+    const dialog = await openBulkDialog();
+    confirmBulkWith(dialog, "AdminPass!xK9pQ2", 2);
+
+    await waitFor(() =>
+      expect(stationApi.setStationActive).toHaveBeenCalledWith("MED_ALPHA", false, {
+        adminPassword: "AdminPass!xK9pQ2",
+      }),
+    );
+    expect(stationApi.setStationActive).toHaveBeenCalledWith("FIRE_BRAVO", false, {
+      adminPassword: "AdminPass!xK9pQ2",
+    });
+    expect(stationApi.setStationActive).toHaveBeenCalledTimes(2);
+    // Every request carries the password in the body — never a bare flag.
+    for (const call of stationApi.setStationActive.mock.calls) {
+      expect(call[2]).toEqual({ adminPassword: "AdminPass!xK9pQ2" });
+    }
+
+    expect(await screen.findByText("Deactivated 2 stations.")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(stationApi.listStations).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("No stations selected.")).toBeTruthy();
+  });
+
+  it("canceling the bulk dialog performs no protected change", async () => {
+    await renderStations();
+
+    fireEvent.click(screen.getByLabelText("Select Alpha Medical Base"));
+    const dialog = await openBulkDialog();
+    fireEvent.click(within(dialog).getByText("Cancel"));
+
+    expect(stationApi.setStationActive).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByText(/Deactivated \d+ of/)).toBeNull();
+  });
+
+  it("a wrong bulk password changes nothing and keeps the dialog open for correction", async () => {
+    stationApi.setStationActive.mockRejectedValue({
+      response: { data: { message: "Administrator password is incorrect." } },
+    });
+    await renderStations();
+
+    fireEvent.click(screen.getByLabelText("Select all active stations"));
+    const dialog = await openBulkDialog();
+    confirmBulkWith(dialog, "WrongPass!123", 2);
+
+    expect(
+      await screen.findByText("That password is incorrect. Please enter your current administrator password and try again."),
+    ).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(stationApi.setStationActive).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/Deactivated \d+/)).toBeNull();
+    expect(stationApi.listStations).toHaveBeenCalledTimes(1);
+  });
+
+  it("partial bulk failures report exactly which stations failed and keep only those selected", async () => {
+    stationApi.setStationActive.mockImplementation((id) =>
+      id === "MED_ALPHA"
+        ? Promise.resolve({ success: true })
+        : Promise.reject({ response: { data: { message: "Station FIRE_BRAVO is already deactivated." } } }),
+    );
+    stationApi.listStations
+      .mockResolvedValueOnce(structuredClone([stationA, stationB, stationOff]))
+      .mockResolvedValueOnce(structuredClone([
+        { ...stationA, isActive: false },
+        stationB,
+        stationOff,
+      ]));
+    render(<StationManagement embedded />);
+    await screen.findByText("Alpha Medical Base");
+
+    fireEvent.click(screen.getByLabelText("Select all active stations"));
+    const dialog = await openBulkDialog();
+    confirmBulkWith(dialog, "AdminPass!xK9pQ2", 2);
+
+    expect(await screen.findByText("Deactivated 1 of 2 stations.")).toBeTruthy();
+    const failure = await screen.findByText(/Couldn't deactivate 1 station:/);
+    expect(failure.textContent).toContain("Bravo Fire Post");
+    // Only the failure stays selected — a retry can't re-deactivate the success.
+    expect(screen.getByText("1 station selected.")).toBeTruthy();
+    expect(screen.getByLabelText("Select Bravo Fire Post").checked).toBe(true);
+    expect(screen.queryByLabelText("Select Alpha Medical Base")).toBeNull();
+  });
+
+  it("a legacy unit whose id equals its name is shown only once; a distinct Unit ID is preserved", async () => {
+    render(<StationManagement embedded />);
+    expect(await screen.findByText("River Park Authority")).toBeTruthy();
+
+    // Legacy string unit: id === name — must not print twice.
+    fireEvent.click(screen.getAllByText("Edit")[1]); // River Park row
+    const panel = await screen.findByLabelText(/Assigned units for/);
+    expect(within(panel).getAllByText("Rescue Boat Unit #1")).toHaveLength(1);
+
+    // Distinct id + name: both stay visible.
+    fireEvent.click(screen.getByLabelText("Close"));
+    fireEvent.click(screen.getAllByText("Edit")[0]); // FIRE row
+    const firePanel = await screen.findByLabelText(/Assigned units for/);
+    expect(within(firePanel).getByText("BFP Engine Pumper #1")).toBeTruthy();
+    expect(within(firePanel).getByText("engine-1")).toBeTruthy();
   });
 });

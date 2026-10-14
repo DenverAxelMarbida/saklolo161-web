@@ -9,6 +9,7 @@ import {
   setUnitActive,
 } from "../lib/api";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
+import { errorMessage } from "../lib/errorMessages";
 import AdminPasswordModal from "./AdminPasswordModal";
 import Skeleton from "./Skeleton";
 
@@ -16,9 +17,6 @@ import Skeleton from "./Skeleton";
 // CATEGORIES keys are UPPERCASE display keys — the modal maps between
 // them only when seeding defaults, never for persistence.
 const BACKEND_CATEGORIES = ["Medical", "Fire", "Flood", "Crime"];
-
-const errorMessage = (err, fallback) =>
-  err?.response?.data?.message || fallback;
 
 // Backend units arrive normalized ({ id, name, isActive }); legacy
 // records may still carry plain strings — normalize at the boundary
@@ -354,6 +352,19 @@ export default function StationManagement({ embedded = false }) {
   const [deactivateTarget, setDeactivateTarget] = useState(null);
   const [deactivateError, setDeactivateError] = useState(null);
   const [pendingToggleId, setPendingToggleId] = useState(null);
+  // Bulk deactivation: same per-station protection as the single
+  // action (one server-verified request each), one password entry.
+  const [bulkTargets, setBulkTargets] = useState(null); // array of stations or null
+  const [bulkError, setBulkError] = useState(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  // Search + filters apply client-side to the already-loaded list —
+  // typing or selecting never fires another request.
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all"); // all | activated | deactivated
+  // Bulk selection: station ids, re-resolved against fresh data at
+  // commit time so a stale row is never acted on blindly.
+  const [selectedIds, setSelectedIds] = useState([]);
   // Units live inside the Edit Station modal as a PENDING DRAFT:
   // adds and renames update only this list until Save Changes commits
   // everything (station fields + units) after admin reauthentication.
@@ -375,6 +386,14 @@ export default function StationManagement({ embedded = false }) {
     try {
       const list = await listStations({ includeInactive: true });
       setStations(list);
+      // Reconcile selection against fresh truth: drop stations that
+      // vanished or are no longer deactivation-eligible.
+      setSelectedIds((prev) =>
+        prev.filter((id) => {
+          const fresh = list.find((s) => s.id === id);
+          return fresh && fresh.isActive !== false;
+        }),
+      );
       return list;
     } catch (err) {
       setLoadError(
@@ -574,7 +593,7 @@ export default function StationManagement({ embedded = false }) {
         }
       } catch (err) {
         failures.push(
-          `${entry.isNew ? `Adding "${entry.id}"` : `Renaming "${entry.id}"`} failed: ${errorMessage(err, "request failed.")}`,
+          `${entry.isNew ? `Adding "${entry.id}"` : `Renaming "${entry.id}"`} failed: ${errorMessage(err, "Please try again.")}`,
         );
       }
     }
@@ -654,6 +673,123 @@ export default function StationManagement({ embedded = false }) {
       }
     } finally {
       setPendingToggleId(null);
+    }
+  };
+
+  // A station is bulk-deactivation eligible only while active.
+  // Already-deactivated stations are excluded up front, and the
+  // backend (verifyAuth + requireAdmin + per-request adminPassword
+  // reauth) remains the real authorization boundary.
+  const isDeactivatable = (station) => station.isActive !== false;
+
+  const filteredStations = stations.filter((station) => {
+    const needle = search.trim().toLowerCase();
+    if (needle && !(station.name || "").toLowerCase().includes(needle)) return false;
+    if (categoryFilter !== "all" && station.category !== categoryFilter) return false;
+    if (statusFilter === "activated" && !isDeactivatable(station)) return false;
+    if (statusFilter === "deactivated" && isDeactivatable(station)) return false;
+    return true;
+  });
+
+  const filtersActive =
+    search.trim() !== "" || categoryFilter !== "all" || statusFilter !== "all";
+
+  const resetFilters = () => {
+    setSearch("");
+    setCategoryFilter("all");
+    setStatusFilter("all");
+  };
+
+  const eligibleFiltered = filteredStations.filter(isDeactivatable);
+  const selectedSet = new Set(selectedIds);
+  const allEligibleSelected =
+    eligibleFiltered.length > 0 &&
+    eligibleFiltered.every((s) => selectedSet.has(s.id));
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (allEligibleSelected) {
+      const eligible = new Set(eligibleFiltered.map((s) => s.id));
+      setSelectedIds((prev) => prev.filter((id) => !eligible.has(id)));
+    } else {
+      setSelectedIds((prev) => [
+        ...prev,
+        ...eligibleFiltered.map((s) => s.id).filter((id) => !prev.includes(id)),
+      ]);
+    }
+  };
+
+  const openBulkDeactivate = () => {
+    // Resolve the selection against CURRENT data — never trust a
+    // stale snapshot for a protected action.
+    const targets = stations.filter((s) => selectedSet.has(s.id) && isDeactivatable(s));
+    if (targets.length === 0) {
+      flashError("Select at least one active station to deactivate.");
+      return;
+    }
+    setBulkError(null);
+    setBannerOk(null);
+    setBulkTargets(targets);
+  };
+
+  // Bulk deactivation: one password entry, then ONE server-verified
+  // request per station (each PATCH re-verifies the admin password
+  // and authority server-side — the frontend never authorizes).
+  // Sequential so failures are attributable; successes and failures
+  // are each reported by name, and a retry only touches what failed.
+  const handleBulkDeactivate = async (targets, adminPassword) => {
+    if (bulkSaving) return;
+    setBulkSaving(true);
+    setBulkError(null);
+    const succeeded = [];
+    const failures = [];
+    for (const target of targets) {
+      try {
+        await setStationActive(target.id, false, { adminPassword });
+        succeeded.push(target);
+      } catch (err) {
+        failures.push({
+          id: target.id,
+          name: target.name,
+          message: errorMessage(err, "Couldn't deactivate this station. Try again."),
+        });
+      }
+    }
+    setBulkSaving(false);
+
+    if (succeeded.length === 0) {
+      // Total failure — most likely a wrong password. Stay in the
+      // dialog so it can be corrected and retried without reselecting.
+      const first = failures[0]?.message || "Couldn't deactivate the selected stations. Try again.";
+      const sameForAll = failures.every((f) => f.message === first);
+      setBulkError(
+        sameForAll
+          ? first
+          : `Couldn't deactivate any of the ${targets.length} selected stations: ${failures.map((f) => `${f.name} (${f.message})`).join("; ")}`,
+      );
+      return;
+    }
+
+    // Partial or full success: close the dialog, refresh truth, keep
+    // ONLY the failures selected so a retry is safe and never
+    // duplicates a deactivation.
+    setBulkTargets(null);
+    await load();
+    setSelectedIds(failures.map((f) => f.id));
+    if (failures.length === 0) {
+      flashOk(`Deactivated ${succeeded.length} ${succeeded.length === 1 ? "station" : "stations"}.`);
+    } else {
+      flashOk(`Deactivated ${succeeded.length} of ${targets.length} stations.`);
+      // Both banners stay visible for partial results — set the
+      // error directly (flashError would clear the success line).
+      setBannerError(
+        `Couldn't deactivate ${failures.length} ${failures.length === 1 ? "station" : "stations"}: ${failures.map((f) => `${f.name} (${f.message})`).join("; ")}`,
+      );
     }
   };
 
@@ -777,6 +913,95 @@ export default function StationManagement({ embedded = false }) {
           </button>
         </div>
 
+        {/* Search + filters — client-side over the loaded list. */}
+        {stations.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-end gap-2">
+            <div className="min-w-44 flex-1">
+              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station-search">
+                Search by name
+              </label>
+              <input
+                id="station-search"
+                type="search"
+                placeholder="e.g. River Park…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station-category-filter">
+                Category
+              </label>
+              <select
+                id="station-category-filter"
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="mt-1 rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+              >
+                <option value="all">All</option>
+                {BACKEND_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="station-status-filter">
+                Status
+              </label>
+              <select
+                id="station-status-filter"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="mt-1 rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
+              >
+                <option value="all">All</option>
+                <option value="activated">Activated</option>
+                <option value="deactivated">Deactivated</option>
+              </select>
+            </div>
+            {filtersActive && filteredStations.length > 0 && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
+              >
+                Reset filters
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Bulk action bar — deactivation only; activation stays per-row. */}
+        {stations.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-sm text-ink-dim" aria-live="polite">
+              {selectedIds.length === 0
+                ? "No stations selected."
+                : `${selectedIds.length} ${selectedIds.length === 1 ? "station" : "stations"} selected.`}
+            </span>
+            <button
+              type="button"
+              onClick={openBulkDeactivate}
+              disabled={selectedIds.length === 0 || bulkSaving}
+              className="rounded-md border border-fire/40 bg-fire/10 px-3 py-1.5 text-sm font-semibold text-fire transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Deactivate Selected
+            </button>
+            {selectedIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedIds([])}
+                className="rounded-md border border-border px-3 py-1.5 text-sm text-ink-dim transition-colors hover:text-ink"
+              >
+                Clear selection
+              </button>
+            )}
+          </div>
+        )}
+
         {bannerOk && (
           <p className="mt-4 rounded border border-resolved/40 bg-resolved/10 p-3 text-sm text-resolved">
             {bannerOk}
@@ -835,11 +1060,43 @@ export default function StationManagement({ embedded = false }) {
           <p className="mt-6 text-center text-sm text-ink-dim">No stations found.</p>
         )}
 
-        {stations.length > 0 && (
+        {!loading && !loadError && stations.length > 0 && filteredStations.length === 0 && (
+          <div className="mt-6 text-center">
+            <p className="text-sm text-ink-dim">
+              No stations match your search or filters.
+            </p>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="mt-2 rounded-md border border-border px-3 py-1.5 text-sm text-ink-dim transition-colors hover:text-ink"
+            >
+              Reset filters
+            </button>
+          </div>
+        )}
+
+        {filteredStations.length > 0 && (
           <div className="mt-4 overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-dim">
+                  <th className="py-2 pr-3">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all active stations"
+                      checked={allEligibleSelected}
+                      ref={(el) => {
+                        if (el) {
+                          el.indeterminate =
+                            !allEligibleSelected &&
+                            eligibleFiltered.some((s) => selectedSet.has(s.id));
+                        }
+                      }}
+                      onChange={toggleSelectAll}
+                      disabled={eligibleFiltered.length === 0}
+                      className="h-4 w-4 accent-[#F97316]"
+                    />
+                  </th>
                   <th className="py-2 pr-3">Station</th>
                   <th className="py-2 pr-3">Category</th>
                   <th className="py-2 pr-3">Contact</th>
@@ -850,11 +1107,27 @@ export default function StationManagement({ embedded = false }) {
                 </tr>
               </thead>
               <tbody>
-                {stations.map((station) => {
+                {filteredStations.map((station) => {
                   const units = normalizeUnits(station);
                   const active = station.isActive !== false;
                   return (
                     <tr key={station.id} className="border-b border-border align-top">
+                      <td className="py-2.5 pr-3">
+                        {active ? (
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${station.name}`}
+                            checked={selectedSet.has(station.id)}
+                            onChange={() => toggleSelect(station.id)}
+                            className="h-4 w-4 accent-[#F97316]"
+                          />
+                        ) : (
+                          <span
+                            className="inline-block h-4 w-4"
+                            title="Already deactivated"
+                          />
+                        )}
+                      </td>
                       <td className="py-2.5 pr-3">
                         <div className="font-medium">{station.name}</div>
                         <div className="font-mono text-xs text-ink-dim">{station.id}</div>
@@ -944,7 +1217,13 @@ export default function StationManagement({ embedded = false }) {
                     >
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{unit.name}</div>
-                        <div className="font-mono text-xs text-ink-dim">{unit.id}</div>
+                        {/* The ID line renders only when it is a
+                            DISTINCT identifier — legacy units whose id
+                            equals the name (e.g. "Mobile Patrol #101")
+                            would otherwise print the same text twice. */}
+                        {unit.id !== unit.name && (
+                          <div className="font-mono text-xs text-ink-dim">{unit.id}</div>
+                        )}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {statusBadge(unit.isActive)}
@@ -1123,6 +1402,43 @@ export default function StationManagement({ embedded = false }) {
           onSubmit={(adminPassword) =>
             handleSetStationActive(deactivateTarget, false, adminPassword)
           }
+        />
+      )}
+
+      {bulkTargets && (
+        <AdminPasswordModal
+          ariaLabel="Deactivate Selected Stations"
+          title="Deactivate Selected Stations"
+          description={
+            <div className="space-y-1 text-sm">
+              <p>
+                Deactivate{" "}
+                <span className="font-semibold">
+                  {bulkTargets.length} {bulkTargets.length === 1 ? "station" : "stations"}
+                </span>
+                ? Dispatching to {bulkTargets.length === 1 ? "this station stops" : "these stations stop"} until
+                reactivated — dispatch history is preserved.
+              </p>
+              <ul className="max-h-28 list-disc overflow-y-auto pl-5 text-ink-dim">
+                {bulkTargets.slice(0, 8).map((station) => (
+                  <li key={station.id} className="break-all">{station.name}</li>
+                ))}
+              </ul>
+              {bulkTargets.length > 8 && (
+                <p className="text-ink-dim">…and {bulkTargets.length - 8} more.</p>
+              )}
+            </div>
+          }
+          confirmLabel={`Deactivate ${bulkTargets.length} ${bulkTargets.length === 1 ? "Station" : "Stations"}`}
+          savingLabel="Deactivating…"
+          saving={bulkSaving}
+          error={bulkError}
+          onCancel={() => {
+            if (bulkSaving) return;
+            setBulkTargets(null);
+            setBulkError(null);
+          }}
+          onSubmit={(adminPassword) => handleBulkDeactivate(bulkTargets, adminPassword)}
         />
       )}
 
