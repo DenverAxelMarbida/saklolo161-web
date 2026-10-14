@@ -9,6 +9,17 @@ import {
 } from "../lib/api";
 import { isStrongPassword } from "../lib/passwordPolicy";
 import { errorMessage } from "../lib/errorMessages";
+import {
+  AdminToolbar,
+  SearchField,
+  FilterSelect,
+  ResetFiltersButton,
+  BulkActionBar,
+  ResultCount,
+  Chip,
+  RowButton,
+  focusRing,
+} from "./adminShared";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
 import AdminPasswordModal from "./AdminPasswordModal";
 import PasswordRequirements from "./PasswordRequirements";
@@ -66,10 +77,23 @@ function BulkDisableAccountsModal({ targets, saving, error, onCancel, onSubmit }
 // ADD ONLY — editing an account never touches a password. The add
 // mode enforces the shared password policy (live checklist) plus a
 // confirm field; the backend re-validates everything server-side.
+// Email is validated inline (before ANY submit): an invalid address
+// can never reach the API, matching the backend's "A valid email is
+// required" rule without inventing a new one.
 function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit }) {
   const rootRef = useRef(null);
   useDialogDismiss(rootRef, onCancel);
   const isAdd = mode === "add";
+  const [emailTouched, setEmailTouched] = useState(false);
+  const email = form.email.trim();
+  const emailError = !email
+    ? "Please enter an email address."
+    : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      ? ""
+      : "Please enter a valid email address (e.g. dispatcher@marikina.gov.ph).";
+  // Live feedback while typing (like the password checklist); the
+  // empty-field message waits for blur so opening the form never yells.
+  const showEmailError = Boolean(emailError && (emailTouched || email.length > 0));
   const confirmMismatch =
     isAdd && form.confirmPassword.length > 0 && form.confirmPassword !== form.password;
   const addValid =
@@ -77,7 +101,7 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
     form.password.length > 0 &&
     isStrongPassword(form.password) &&
     form.confirmPassword === form.password;
-  const canSubmit = !saving && (!isAdd || addValid);
+  const canSubmit = !saving && !emailError && (!isAdd || addValid);
 
   return (
     <div
@@ -113,8 +137,15 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
               type="email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
+              onBlur={() => setEmailTouched(true)}
+              aria-describedby={showEmailError ? "user-email-error" : undefined}
               className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
             />
+            {showEmailError && (
+              <p id="user-email-error" role="alert" className="mt-1 text-xs text-fire">
+                {emailError}
+              </p>
+            )}
           </div>
 
           {isAdd && (
@@ -183,20 +214,20 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
             </select>
           </div>
 
-          {error && <p className="text-sm text-fire">{error}</p>}
+          {error && <p role="alert" className="text-sm text-fire">{error}</p>}
         </div>
 
         <div className="flex gap-2 border-t border-border p-4">
           <button
             onClick={onCancel}
-            className="flex-1 rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
+            className={`flex-1 rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink ${focusRing}`}
           >
             Cancel
           </button>
           <button
             onClick={onSubmit}
             disabled={!canSubmit}
-            className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60"
+            className={`flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60 ${focusRing}`}
           >
             {saving ? "Saving…" : isAdd ? "Create Account" : "Save Changes"}
           </button>
@@ -380,7 +411,7 @@ function AdminSetPasswordModal({ user, onCancel }) {
         <div className="flex gap-2 border-t border-border p-4">
           <button
             onClick={onCancel}
-            className="flex-1 rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
+            className={`flex-1 rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink ${focusRing}`}
           >
             {success ? "Close" : "Cancel"}
           </button>
@@ -392,7 +423,7 @@ function AdminSetPasswordModal({ user, onCancel }) {
               setVerifying(true);
             }}
             disabled={!canSubmit}
-            className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60"
+            className={`flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60 ${focusRing}`}
           >
             Update Password
           </button>
@@ -716,7 +747,7 @@ export default function UserManagement({ embedded = false, currentUser = null })
           </div>
           <button
             onClick={openAdd}
-            className="rounded-md bg-medical px-3 py-2 text-sm font-semibold text-bg transition-opacity hover:opacity-90"
+            className={`rounded-md bg-medical px-3 py-2 text-sm font-semibold text-bg transition-opacity hover:opacity-90 ${focusRing}`}
           >
             Add Account
           </button>
@@ -724,106 +755,71 @@ export default function UserManagement({ embedded = false, currentUser = null })
 
         {/* Search + filters — client-side over the loaded list. */}
         {users.length > 0 && (
-          <div className="mt-4 flex flex-wrap items-end gap-2">
-            <div className="min-w-44 flex-1">
-              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="account-search">
-                Search by email
-              </label>
-              <input
-                id="account-search"
-                type="search"
-                placeholder="e.g. dispatcher@…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="account-agency-filter">
-                Agency
-              </label>
-              <select
-                id="account-agency-filter"
-                value={agencyFilter}
-                onChange={(e) => setAgencyFilter(e.target.value)}
-                className="mt-1 rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
-              >
-                <option value="all">All</option>
-                {agencyOptions.map((agency) => (
-                  <option key={agency} value={agency}>
-                    {agency}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="account-role-filter">
-                Role
-              </label>
-              <select
-                id="account-role-filter"
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-                className="mt-1 rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
-              >
-                <option value="all">All</option>
-                <option value="admin">Admin</option>
-                <option value="dispatcher">Dispatcher</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wide text-ink-dim" htmlFor="account-status-filter">
-                Status
-              </label>
-              <select
-                id="account-status-filter"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="mt-1 rounded-md border border-border bg-bg px-3 py-2 text-sm focus:border-medical focus:outline-none"
-              >
-                <option value="all">All</option>
-                <option value="active">Active</option>
-                <option value="disabled">Disabled</option>
-              </select>
-            </div>
+          <AdminToolbar label="Search & filters">
+            <SearchField
+              id="account-search"
+              label="Search by email"
+              placeholder="e.g. dispatcher@…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <FilterSelect
+              id="account-agency-filter"
+              label="Agency"
+              value={agencyFilter}
+              onChange={(e) => setAgencyFilter(e.target.value)}
+            >
+              <option value="all">All</option>
+              {agencyOptions.map((agency) => (
+                <option key={agency} value={agency}>
+                  {agency}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect
+              id="account-role-filter"
+              label="Role"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+            >
+              <option value="all">All</option>
+              <option value="admin">Admin</option>
+              <option value="dispatcher">Dispatcher</option>
+            </FilterSelect>
+            <FilterSelect
+              id="account-status-filter"
+              label="Status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">All</option>
+              <option value="active">Active</option>
+              <option value="disabled">Disabled</option>
+            </FilterSelect>
             {filtersActive && filteredUsers.length > 0 && (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
-              >
-                Reset filters
-              </button>
+              <ResetFiltersButton onClick={resetFilters} />
             )}
-          </div>
+          </AdminToolbar>
+        )}
+        {users.length > 0 && (
+          <ResultCount shown={filteredUsers.length} total={users.length} noun="account" />
         )}
 
-        {/* Bulk action bar — visible whenever there are accounts. */}
+        {/* Bulk action bar — visually separated from the quiet row
+            buttons so the destructive action can't be skimmed past. */}
         {users.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-sm text-ink-dim" aria-live="polite">
-              {selectedUids.length === 0
+          <BulkActionBar
+            countText={
+              selectedUids.length === 0
                 ? "No accounts selected."
-                : `${selectedUids.length} ${selectedUids.length === 1 ? "account" : "accounts"} selected.`}
-            </span>
-            <button
-              type="button"
-              onClick={openBulkDisable}
-              disabled={selectedUids.length === 0 || bulkSaving}
-              className="rounded-md border border-fire/40 bg-fire/10 px-3 py-1.5 text-sm font-semibold text-fire transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Disable Selected
-            </button>
-            {selectedUids.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSelectedUids([])}
-                className="rounded-md border border-border px-3 py-1.5 text-sm text-ink-dim transition-colors hover:text-ink"
-              >
-                Clear selection
-              </button>
-            )}
-          </div>
+                : `${selectedUids.length} ${selectedUids.length === 1 ? "account" : "accounts"} selected.`
+            }
+            actionLabel="Disable Selected"
+            onAction={openBulkDisable}
+            actionDisabled={selectedUids.length === 0 || bulkSaving}
+            onClear={() => setSelectedUids([])}
+            showClear={selectedUids.length > 0}
+          />
         )}
 
         {bannerSuccess && (
@@ -888,14 +884,14 @@ export default function UserManagement({ embedded = false, currentUser = null })
         )}
 
         {!loading && !loadError && users.length > 0 && filteredUsers.length === 0 && (
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center" role="status">
             <p className="text-sm text-ink-dim">
               No accounts match your search or filters.
             </p>
             <button
               type="button"
               onClick={resetFilters}
-              className="mt-2 rounded-md border border-border px-3 py-1.5 text-sm text-ink-dim transition-colors hover:text-ink"
+              className={`mt-2 rounded-md border border-border px-3 py-1.5 text-sm text-ink-dim transition-colors hover:text-ink ${focusRing}`}
             >
               Reset filters
             </button>
@@ -903,10 +899,11 @@ export default function UserManagement({ embedded = false, currentUser = null })
         )}
 
         {filteredUsers.length > 0 && (
-          <table className="mt-4 w-full border-collapse text-sm">
+          <div className="mt-4 overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-dim">
-                <th className="py-2 pr-3">
+                <th scope="col" className="py-2 pr-3">
                   <input
                     type="checkbox"
                     aria-label="Select all eligible accounts"
@@ -920,19 +917,22 @@ export default function UserManagement({ embedded = false, currentUser = null })
                     }}
                     onChange={toggleSelectAll}
                     disabled={eligibleFiltered.length === 0}
-                    className="h-4 w-4 accent-[#F97316]"
+                    className={`h-4 w-4 accent-[#F97316] ${focusRing} rounded-sm`}
                   />
                 </th>
-                <th className="py-2 pr-3">Email</th>
-                <th className="py-2 pr-3">Agency</th>
-                <th className="py-2 pr-3">Role</th>
-                <th className="py-2 pr-3">Status</th>
-                <th className="py-2 text-right">Actions</th>
+                <th scope="col" className="py-2 pr-3">Email</th>
+                <th scope="col" className="py-2 pr-3">Agency</th>
+                <th scope="col" className="py-2 pr-3">Role</th>
+                <th scope="col" className="py-2 pr-3">Status</th>
+                <th scope="col" className="py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredUsers.map((user) => (
-                <tr key={user.uid} className="border-b border-border">
+                <tr
+                  key={user.uid}
+                  className={`border-b border-border ${selectedSet.has(user.uid) ? "bg-medical/5" : ""}`}
+                >
                   <td className="py-2.5 pr-3">
                     {isEligible(user) ? (
                       <input
@@ -940,7 +940,7 @@ export default function UserManagement({ embedded = false, currentUser = null })
                         aria-label={`Select ${user.email}`}
                         checked={selectedSet.has(user.uid)}
                         onChange={() => toggleSelect(user.uid)}
-                        className="h-4 w-4 accent-[#F97316]"
+                        className={`h-4 w-4 accent-[#F97316] ${focusRing} rounded-sm`}
                       />
                     ) : (
                       <span
@@ -960,48 +960,37 @@ export default function UserManagement({ embedded = false, currentUser = null })
                     )}
                   </td>
                   <td className="py-2.5 pr-3">{user.agency}</td>
-                  <td className="py-2.5 pr-3">{user.role}</td>
                   <td className="py-2.5 pr-3">
-                    <span
-                      className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                        user.disabled
-                          ? "border-fire/40 bg-fire/10 text-fire"
-                          : "border-white/10 bg-white/5"
-                      }`}
-                    >
+                    <Chip>{user.role}</Chip>
+                  </td>
+                  <td className="py-2.5 pr-3">
+                    <Chip tone={user.disabled ? "danger" : "neutral"}>
                       {user.disabled ? "Disabled" : "Enabled"}
-                    </span>
+                    </Chip>
                   </td>
                   <td className="py-2.5 text-right">
                     <span className="flex justify-end gap-2">
-                      <button
-                        onClick={() => openEdit(user)}
-                        className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink"
-                      >
+                      <RowButton onClick={() => openEdit(user)}>
                         Edit
-                      </button>
-                      <button
-                        onClick={() => openPasswordReset(user)}
-                        className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink"
-                      >
+                      </RowButton>
+                      <RowButton onClick={() => openPasswordReset(user)}>
                         Change Password
-                      </button>
+                      </RowButton>
                       {user.disabled ? (
-                        <button
+                        <RowButton
                           onClick={() => handleSetEnabled(user, true)}
                           disabled={pendingToggleUid != null}
-                          className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink disabled:opacity-60"
                         >
                           Enable
-                        </button>
+                        </RowButton>
                       ) : (
-                        <button
+                        <RowButton
                           onClick={() => openDisable(user)}
                           disabled={pendingToggleUid != null}
-                          className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-fire disabled:opacity-60"
+                          danger
                         >
                           Disable
-                        </button>
+                        </RowButton>
                       )}
                     </span>
                   </td>
@@ -1009,6 +998,7 @@ export default function UserManagement({ embedded = false, currentUser = null })
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

@@ -270,7 +270,7 @@ describe("StationManagement — station add/edit/activate", () => {
 
   it("surfaces backend validation errors inside the verification dialog without closing the modal", async () => {
     stationApi.createStation.mockRejectedValueOnce({
-      response: { data: { message: "Station X already exists." } },
+      response: { data: { message: "Station MEDICAL_TEST_BASE already exists." } },
     });
     await openAddStationFilled();
     const panel = screen.getByLabelText(/Assigned units for new station/);
@@ -285,7 +285,7 @@ describe("StationManagement — station add/edit/activate", () => {
     fireEvent.click(screen.getByText("Create Station"));
     await verifyAndConfirm("AdminPass!xK9pQ2", "Create Station");
 
-    expect(await screen.findByText('A station with the ID "X" already exists. Please use a different Station ID.')).toBeTruthy();
+    expect(await screen.findByText('A station with the ID "MEDICAL_TEST_BASE" already exists. Please use a different Station ID.')).toBeTruthy();
     expect(screen.queryByText("Station created.")).toBeNull();
     expect(stationApi.createStation).toHaveBeenCalledTimes(1);
   });
@@ -1010,5 +1010,120 @@ describe("StationManagement — search, filters, selection, and bulk deactivatio
     const firePanel = await screen.findByLabelText(/Assigned units for/);
     expect(within(firePanel).getByText("BFP Engine Pumper #1")).toBeTruthy();
     expect(within(firePanel).getByText("engine-1")).toBeTruthy();
+  });
+});
+
+describe("StationManagement — validation runs before reauthentication", () => {
+  const openAddStation = async () => {
+    render(<StationManagement embedded />);
+    await screen.findByText("River Park Authority");
+    fireEvent.click(screen.getByText("Add Station"));
+    return screen.getByLabelText("Add Station");
+  };
+
+  const addOneDraftUnit = () => {
+    const panel = screen.getByLabelText(/Assigned units for new station/);
+    fireEvent.change(within(panel).getByLabelText("New Unit ID"), {
+      target: { value: "amb-1" },
+    });
+    fireEvent.change(within(panel).getByLabelText("New Unit Name"), {
+      target: { value: "Ambulance 1" },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add Unit" }));
+  };
+
+  const expectNoVerifyDialog = () => {
+    expect(screen.queryByLabelText("Verify Admin Password")).toBeNull();
+    expect(stationApi.createStation).not.toHaveBeenCalled();
+    expect(stationApi.updateStation).not.toHaveBeenCalled();
+  };
+
+  it("an empty station name is rejected before the password dialog", async () => {
+    const modal = await openAddStation();
+    fireEvent.change(within(modal).getByLabelText("Station ID"), {
+      target: { value: "MEDICAL_TEST_BASE" },
+    });
+    // Name left empty — still add a valid unit so only the name fails.
+    addOneDraftUnit();
+
+    fireEvent.click(screen.getByText("Create Station"));
+
+    expect(await screen.findByText("Please enter a station name.")).toBeTruthy();
+    expect(screen.getByLabelText("Add Station")).toBeTruthy();
+    expectNoVerifyDialog();
+  });
+
+  it("a malformed station ID is rejected before the password dialog", async () => {
+    const modal = await openAddStation();
+    fireEvent.change(within(modal).getByLabelText("Station ID"), {
+      target: { value: "bad id!" },
+    });
+    fireEvent.change(within(modal).getByLabelText("Name"), {
+      target: { value: "Test Medical Base" },
+    });
+    addOneDraftUnit();
+
+    fireEvent.click(screen.getByText("Create Station"));
+
+    expect(
+      await screen.findByText("Station IDs use 3–64 characters: A–Z, 0–9, underscore — e.g. MEDICAL_NEW_BASE."),
+    ).toBeTruthy();
+    expectNoVerifyDialog();
+  });
+
+  it("non-numeric coordinates are rejected before the password dialog", async () => {
+    const modal = await openAddStation();
+    fireEvent.change(within(modal).getByLabelText("Station ID"), {
+      target: { value: "MEDICAL_TEST_BASE" },
+    });
+    fireEvent.change(within(modal).getByLabelText("Name"), {
+      target: { value: "Test Medical Base" },
+    });
+    fireEvent.change(within(modal).getByLabelText("Latitude"), {
+      target: { value: "not-a-number" },
+    });
+    fireEvent.change(within(modal).getByLabelText("Longitude"), {
+      target: { value: "121.1029" },
+    });
+    addOneDraftUnit();
+
+    fireEvent.click(screen.getByText("Create Station"));
+
+    expect(
+      await screen.findByText("Coordinates must be numbers (e.g. 14.6507, 121.1029)."),
+    ).toBeTruthy();
+    expectNoVerifyDialog();
+  });
+
+  it("edit mode: invalid coordinates never reach verification", async () => {
+    render(<StationManagement embedded />);
+    await screen.findByText("River Park Authority");
+
+    fireEvent.click(screen.getAllByText("Edit")[0]);
+    const modal = screen.getByLabelText("Edit Station");
+    // The fixture pre-fills both coordinates — clearing latitude
+    // leaves a half-filled pair, which is invalid.
+    fireEvent.change(within(modal).getByLabelText("Latitude"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByText("Save Changes"));
+
+    expect(
+      await screen.findByText("Enter both latitude and longitude, or leave both blank."),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Edit Station")).toBeTruthy();
+    expectNoVerifyDialog();
+  });
+
+  it("an empty bulk selection cannot open the password dialog", async () => {
+    render(<StationManagement embedded />);
+    await screen.findByText("River Park Authority");
+
+    const bulkButton = screen.getByText("Deactivate Selected");
+    expect(bulkButton.disabled).toBe(true);
+    fireEvent.click(bulkButton);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(stationApi.setStationActive).not.toHaveBeenCalled();
   });
 });
