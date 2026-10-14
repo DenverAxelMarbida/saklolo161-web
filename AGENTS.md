@@ -142,7 +142,8 @@ they are NOT the category palette. If you need a category color, read
 | `listUsers` | `GET /api/users` | Admin only |
 | `createUser` | `POST /api/users` | Admin only; password set once at creation |
 | `updateUser` | `PATCH /api/users/:uid` | Admin only; email / agency / role |
-| `setUserEnabled` | `PATCH /api/users/:uid/status` | Admin only; confirm before disabling |
+| `setUserEnabled` | `PATCH /api/users/:uid/status` | Admin only; disabling requires the admin's own password (`adminPassword`) — server-side reauth |
+| `adminSetUserPassword` | `PATCH /api/users/:uid/password` | Admin only; changes another account's password `{ newPassword, confirmNewPassword }` — authorized by the verified admin session, no admin-password reauth |
 | `changeOwnPassword` | `POST /api/users/me/password` | Any signed-in user; see `ChangePasswordModal.jsx` |
 
 ## Local Testing Setup

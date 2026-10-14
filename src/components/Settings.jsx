@@ -8,7 +8,7 @@ import Policies from "./Policies";
 // (App.jsx view state: "control" | "users" | "settings", no router).
 //
 // Tabbed for every role: "My Account" (all roles, reuses the existing
-// ChangePasswordModal — no second password-change system), "User
+// ChangePasswordModal — no second password-change system), "Account
 // Management" and "Stations & Units" (admins only, rendering the
 // EXISTING UserManagement component and the StationManagement
 // component inline — no redirect to a separate top-level view), and
@@ -28,14 +28,14 @@ export default function Settings({ user, onNavigate, initialSection }) {
     isAdmin && initialSection === "users" ? "users" : "account",
   );
 
-  // Tabs every role sees; admins additionally get User Management
+  // Tabs every role sees; admins additionally get Account Management
   // and Stations & Units. The Policies tab is informational — readable
   // by dispatchers and admins alike, since it describes rules rather
   // than granting access.
   const tabs = isAdmin
     ? [
         { id: "account", label: "My Account" },
-        { id: "users", label: "User Management" },
+        { id: "users", label: "Account Management" },
         { id: "stations", label: "Stations & Units" },
         { id: "policies", label: "Policies" },
       ]
@@ -75,7 +75,7 @@ export default function Settings({ user, onNavigate, initialSection }) {
           </button>
         </div>
 
-        {/* Tabs for every role — User Management only renders for admins */}
+        {/* Tabs for every role — Account Management only renders for admins */}
         <div
           role="tablist"
           aria-label="Settings sections"

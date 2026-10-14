@@ -5,6 +5,7 @@ import {
   createUser,
   updateUser,
   setUserEnabled,
+  adminSetUserPassword,
 } from "../lib/api";
 import { isStrongPassword } from "../lib/passwordPolicy";
 import { useDialogDismiss } from "../hooks/useDialogDismiss";
@@ -46,13 +47,13 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
       tabIndex={-1}
       role="dialog"
       aria-modal="true"
-      aria-label={isAdd ? "Add User" : "Edit User"}
+      aria-label={isAdd ? "Add Account" : "Edit Account"}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none animate-fade-in"
     >
       <div className="w-full max-w-md animate-pop-in overflow-hidden rounded-lg border border-border bg-panel shadow-modal">
         <div className="flex items-center justify-between border-b border-border p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide">
-            {isAdd ? "Add User" : "Edit User"}
+            {isAdd ? "Add Account" : "Edit Account"}
           </h2>
           <button
             type="button"
@@ -159,7 +160,222 @@ function UserFormModal({ mode, form, setForm, error, saving, onCancel, onSubmit 
             disabled={!canSubmit}
             className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60"
           >
-            {saving ? "Saving…" : isAdd ? "Create User" : "Save Changes"}
+            {saving ? "Saving…" : isAdd ? "Create Account" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Confirmation dialog for disabling an account. Disabling revokes
+// the target's access, so the ADMIN must re-prove their OWN current
+// password here — the backend (PATCH /api/users/:uid/status) re-
+// verifies it server-side against the authenticated token's email
+// before anything is disabled. This dialog is UI only; it can never
+// bypass that check.
+function DisableAccountModal({ user, saving, error, onCancel, onSubmit }) {
+  const rootRef = useRef(null);
+  useDialogDismiss(rootRef, onCancel);
+  const [adminPassword, setAdminPassword] = useState("");
+  const canSubmit = !saving && adminPassword.length > 0;
+
+  return (
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Disable Account"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none animate-fade-in"
+    >
+      <div className="w-full max-w-md animate-pop-in overflow-hidden rounded-lg border border-border bg-panel shadow-modal">
+        <div className="flex items-center justify-between border-b border-border p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide">
+            Disable Account
+          </h2>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-dim transition-colors hover:text-ink"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="space-y-4 p-4">
+          <p className="text-sm">
+            Disable <span className="font-semibold">{user.email}</span>? The
+            account can no longer sign in until it is enabled again.
+          </p>
+          <p className="text-sm text-ink-dim">
+            For your security, enter your own current password to confirm.
+          </p>
+          <div>
+            <label
+              className="text-xs uppercase tracking-wide text-ink-dim"
+              htmlFor="disable-admin-password"
+            >
+              Your Current Password
+            </label>
+            <PasswordInput
+              id="disable-admin-password"
+              autoComplete="current-password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              className="mt-1 w-full rounded-md border border-border bg-bg pl-3 py-2 text-sm focus:border-medical focus:outline-none"
+            />
+          </div>
+
+          {error && <p className="text-sm text-fire">{error}</p>}
+        </div>
+
+        <div className="flex gap-2 border-t border-border p-4">
+          <button
+            onClick={onCancel}
+            className="flex-1 rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSubmit(adminPassword)}
+            disabled={!canSubmit}
+            className="flex-1 rounded-md border border-fire/40 bg-fire/10 py-2 text-sm font-semibold text-fire transition-opacity disabled:opacity-60"
+          >
+            {saving ? "Disabling…" : "Confirm Disable"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Admin reset of ANOTHER account's password (backend:
+// PATCH /api/users/:uid/password — verifyAuth + requireAdmin). Only
+// the new password and its confirmation are requested; authorization
+// is the verified admin session. Mirrors the self-service
+// ChangePasswordModal UX (live policy checklist, success message
+// in-dialog, fields cleared on success).
+function AdminSetPasswordModal({ user, onCancel }) {
+  const rootRef = useRef(null);
+  useDialogDismiss(rootRef, onCancel);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const mismatch =
+    confirmNewPassword.length > 0 && confirmNewPassword !== newPassword;
+  const canSubmit =
+    !saving &&
+    isStrongPassword(newPassword) &&
+    confirmNewPassword === newPassword;
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await adminSetUserPassword(user.uid, {
+        newPassword,
+        confirmNewPassword,
+      });
+      setSuccess(result?.message || "Password updated successfully.");
+      setNewPassword("");
+      setConfirmNewPassword("");
+    } catch (err) {
+      setError(errorMessage(err, "Couldn't update the password. Try again."));
+      // The new-password fields stay so a retry only re-enters them.
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Change Account Password"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none animate-fade-in"
+    >
+      <div className="w-full max-w-md animate-pop-in overflow-hidden rounded-lg border border-border bg-panel shadow-modal">
+        <div className="flex items-center justify-between border-b border-border p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide">
+            Change Account Password
+          </h2>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-dim transition-colors hover:text-ink"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="space-y-4 p-4">
+          <p className="text-sm">
+            Set a new password for{" "}
+            <span className="font-semibold">{user.email}</span>.
+          </p>
+          <div>
+            <label
+              className="text-xs uppercase tracking-wide text-ink-dim"
+              htmlFor="admin-reset-new"
+            >
+              New Password
+            </label>
+            <PasswordInput
+              id="admin-reset-new"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="mt-1 w-full rounded-md border border-border bg-bg pl-3 py-2 text-sm focus:border-medical focus:outline-none"
+            />
+            <PasswordRequirements password={newPassword} />
+          </div>
+
+          <div>
+            <label
+              className="text-xs uppercase tracking-wide text-ink-dim"
+              htmlFor="admin-reset-confirm"
+            >
+              Confirm New Password
+            </label>
+            <PasswordInput
+              id="admin-reset-confirm"
+              autoComplete="new-password"
+              value={confirmNewPassword}
+              onChange={(e) => setConfirmNewPassword(e.target.value)}
+              className="mt-1 w-full rounded-md border border-border bg-bg pl-3 py-2 text-sm focus:border-medical focus:outline-none"
+            />
+            {mismatch && (
+              <p className="mt-1 text-xs text-fire">Passwords do not match.</p>
+            )}
+          </div>
+
+          {error && <p className="text-sm text-fire">{error}</p>}
+          {success && <p className="text-sm text-risk-low">{success}</p>}
+        </div>
+
+        <div className="flex gap-2 border-t border-border p-4">
+          <button
+            onClick={onCancel}
+            className="flex-1 rounded-md border border-border px-3 py-2 text-sm text-ink-dim transition-colors hover:text-ink"
+          >
+            {success ? "Close" : "Cancel"}
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className="flex-1 rounded-md bg-medical py-2 text-sm font-semibold text-bg transition-opacity disabled:opacity-60"
+          >
+            {saving ? "Updating…" : "Update Password"}
           </button>
         </div>
       </div>
@@ -175,7 +391,10 @@ export default function UserManagement({ embedded = false }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [bannerError, setBannerError] = useState(null);
-  const [modal, setModal] = useState(null); // { mode: "add" } | { mode: "edit", user }
+  const [bannerSuccess, setBannerSuccess] = useState(null);
+  // { mode: "add" } | { mode: "edit", user } | { mode: "disable", user }
+  const [modal, setModal] = useState(null);
+  const [passwordTarget, setPasswordTarget] = useState(null); // user for AdminSetPasswordModal
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -185,7 +404,6 @@ export default function UserManagement({ embedded = false }) {
   });
   const [modalError, setModalError] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [confirmDisableUid, setConfirmDisableUid] = useState(null);
   const [pendingToggleUid, setPendingToggleUid] = useState(null);
 
   const load = useCallback(async () => {
@@ -195,7 +413,7 @@ export default function UserManagement({ embedded = false }) {
       setUsers(await listUsers());
     } catch (err) {
       setLoadError(
-        errorMessage(err, "Couldn't load users. Check your connection and try again."),
+        errorMessage(err, "Couldn't load accounts. Check your connection and try again."),
       );
     } finally {
       setLoading(false);
@@ -215,11 +433,13 @@ export default function UserManagement({ embedded = false }) {
       role: "dispatcher",
     });
     setModalError(null);
+    setBannerSuccess(null);
     setModal({ mode: "add" });
   };
 
   const openEdit = (user) => {
     // No password on edit — accounts never expose or reset one here.
+    // Password resets go through the dedicated Change Password action.
     setForm({
       email: user.email,
       password: "",
@@ -228,7 +448,19 @@ export default function UserManagement({ embedded = false }) {
       role: user.role,
     });
     setModalError(null);
+    setBannerSuccess(null);
     setModal({ mode: "edit", user });
+  };
+
+  const openDisable = (user) => {
+    setModalError(null);
+    setBannerSuccess(null);
+    setModal({ mode: "disable", user });
+  };
+
+  const openPasswordReset = (user) => {
+    setBannerSuccess(null);
+    setPasswordTarget(user);
   };
 
   const handleSave = async () => {
@@ -242,6 +474,7 @@ export default function UserManagement({ embedded = false }) {
           agency: form.agency,
           role: form.role,
         });
+        setBannerSuccess("Account created.");
       } else {
         await updateUser(modal.user.uid, {
           email: form.email.trim(),
@@ -256,7 +489,7 @@ export default function UserManagement({ embedded = false }) {
         errorMessage(
           err,
           modal.mode === "add"
-            ? "Couldn't create the user. Try again."
+            ? "Couldn't create the account. Try again."
             : "Couldn't save the changes. Try again.",
         ),
       );
@@ -265,19 +498,34 @@ export default function UserManagement({ embedded = false }) {
     }
   };
 
-  const handleSetEnabled = async (user, enabled) => {
+  const handleSetEnabled = async (user, enabled, adminPassword) => {
     // One toggle at a time: a disabled double-click must never fire a
     // second PATCH for the same (or another) row.
     if (pendingToggleUid != null) return;
     setPendingToggleUid(user.uid);
     setBannerError(null);
+    setBannerSuccess(null);
+    setModalError(null);
     try {
-      await setUserEnabled(user.uid, enabled);
-      setConfirmDisableUid(null);
+      const result = adminPassword
+        ? await setUserEnabled(user.uid, enabled, { adminPassword })
+        : await setUserEnabled(user.uid, enabled);
+      setModal(null);
+      setBannerSuccess(result?.message || (enabled ? "User enabled." : "User disabled."));
       await load();
     } catch (err) {
-      setConfirmDisableUid(null);
-      setBannerError(errorMessage(err, "Couldn't update the user status. Try again."));
+      const message = errorMessage(
+        err,
+        "Couldn't update the account status. Try again.",
+      );
+      if (enabled) {
+        // Enable runs from the row — surface the failure as a page banner.
+        setBannerError(message);
+      } else {
+        // Disable runs from the dialog — keep it open so a wrong
+        // password can be corrected without re-opening it.
+        setModalError(message);
+      }
     } finally {
       setPendingToggleUid(null);
     }
@@ -292,7 +540,7 @@ export default function UserManagement({ embedded = false }) {
       <div className={embedded ? "" : "mx-auto w-full max-w-4xl"}>
         <div className="flex items-center justify-between">
           <div>
-            <Heading className="text-lg font-semibold">User Management</Heading>
+            <Heading className="text-lg font-semibold">Account Management</Heading>
             <p className="text-sm text-ink-dim">
               Manage dispatcher and admin accounts for the control room.
             </p>
@@ -301,9 +549,15 @@ export default function UserManagement({ embedded = false }) {
             onClick={openAdd}
             className="rounded-md bg-medical px-3 py-2 text-sm font-semibold text-bg transition-opacity hover:opacity-90"
           >
-            Add User
+            Add Account
           </button>
         </div>
+
+        {bannerSuccess && (
+          <p className="mt-4 rounded border border-risk-low/40 bg-risk-low/10 p-3 text-sm text-risk-low">
+            {bannerSuccess}
+          </p>
+        )}
 
         {bannerError && (
           <p className="mt-4 rounded border border-fire/40 bg-fire/10 p-3 text-sm text-fire">
@@ -316,7 +570,7 @@ export default function UserManagement({ embedded = false }) {
         {loading && users.length === 0 && (
           <div
             role="status"
-            aria-label="Loading users"
+            aria-label="Loading accounts"
             className="mt-6 space-y-2"
           >
             {[0, 1, 2, 3].map((i) => (
@@ -357,7 +611,7 @@ export default function UserManagement({ embedded = false }) {
         )}
 
         {!loading && !loadError && users.length === 0 && (
-          <p className="mt-6 text-center text-sm text-ink-dim">No users found.</p>
+          <p className="mt-6 text-center text-sm text-ink-dim">No accounts found.</p>
         )}
 
         {users.length > 0 && (
@@ -396,6 +650,12 @@ export default function UserManagement({ embedded = false }) {
                       >
                         Edit
                       </button>
+                      <button
+                        onClick={() => openPasswordReset(user)}
+                        className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink"
+                      >
+                        Change Password
+                      </button>
                       {user.disabled ? (
                         <button
                           onClick={() => handleSetEnabled(user, true)}
@@ -404,26 +664,9 @@ export default function UserManagement({ embedded = false }) {
                         >
                           Enable
                         </button>
-                      ) : confirmDisableUid === user.uid ? (
-                        <>
-                          <button
-                            onClick={() => handleSetEnabled(user, false)}
-                            disabled={pendingToggleUid != null}
-                            className="rounded-md border border-fire/40 bg-fire/10 px-2 py-1 text-xs font-semibold text-fire disabled:opacity-60"
-                          >
-                            Confirm disable
-                          </button>
-                          <button
-                            onClick={() => setConfirmDisableUid(null)}
-                            disabled={pendingToggleUid != null}
-                            className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-ink disabled:opacity-60"
-                          >
-                            Cancel
-                          </button>
-                        </>
                       ) : (
                         <button
-                          onClick={() => setConfirmDisableUid(user.uid)}
+                          onClick={() => openDisable(user)}
                           disabled={pendingToggleUid != null}
                           className="rounded-md border border-border px-2 py-1 text-xs text-ink-dim transition-colors hover:text-fire disabled:opacity-60"
                         >
@@ -439,7 +682,7 @@ export default function UserManagement({ embedded = false }) {
         )}
       </div>
 
-      {modal && (
+      {modal && modal.mode !== "disable" && (
         <UserFormModal
           mode={modal.mode}
           form={form}
@@ -448,6 +691,25 @@ export default function UserManagement({ embedded = false }) {
           saving={saving}
           onCancel={() => setModal(null)}
           onSubmit={handleSave}
+        />
+      )}
+
+      {modal && modal.mode === "disable" && (
+        <DisableAccountModal
+          user={modal.user}
+          saving={saving || pendingToggleUid != null}
+          error={modalError}
+          onCancel={() => setModal(null)}
+          onSubmit={(adminPassword) =>
+            handleSetEnabled(modal.user, false, adminPassword)
+          }
+        />
+      )}
+
+      {passwordTarget && (
+        <AdminSetPasswordModal
+          user={passwordTarget}
+          onCancel={() => setPasswordTarget(null)}
         />
       )}
     </div>
