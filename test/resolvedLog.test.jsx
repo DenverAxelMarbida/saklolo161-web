@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import ResolvedLog from "../src/components/ResolvedLog";
 import { formatResolvedDate } from "../src/components/ResolvedDetailModal";
 import { normalizeIncident } from "../src/lib/api";
+import { CATEGORY_KEYS } from "../src/lib/config";
 import {
   PRODUCTION_INCIDENTS,
   PRODUCTION_SERVED_ORDER,
@@ -32,10 +33,16 @@ function makeResolved(overrides = {}) {
   };
 }
 
-function rowIds() {
+// Incident-row buttons are the only ones whose text starts with "#"
+// (the #INC-id span) — excludes the category-filter chip row.
+function rowButtons() {
   return screen
     .getAllByRole("button")
-    .map((button) => button.textContent);
+    .filter((button) => button.textContent.startsWith("#"));
+}
+
+function rowIds() {
+  return rowButtons().map((button) => button.textContent);
 }
 
 describe("ResolvedLog — loading and error states", () => {
@@ -120,7 +127,7 @@ describe("ResolvedLog live evidence sync", () => {
     const { rerender } = render(<ResolvedLog incidents={[stale]} query="" />);
 
     // Dispatcher opens the resolved detail while evidence is still inbound.
-    fireEvent.click(screen.getAllByRole("button")[0]);
+    fireEvent.click(rowButtons()[0]);
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.queryByText(/evidence file/)).toBeNull();
 
@@ -147,7 +154,7 @@ describe("ResolvedLog live evidence sync", () => {
     const stale = makeResolved({ id: "INC-GONE" });
 
     const { rerender } = render(<ResolvedLog incidents={[stale]} query="" />);
-    fireEvent.click(screen.getAllByRole("button")[0]);
+    fireEvent.click(rowButtons()[0]);
     expect(screen.getByRole("dialog")).toBeTruthy();
 
     // Incident dropped from the polled list (e.g. filtered out) — the open
@@ -255,5 +262,151 @@ describe("ResolvedLog — live production payload regression (captured 2026-10-0
     );
 
     expect(screen.getByText("Resolved —")).toBeTruthy();
+  });
+});
+
+describe("ResolvedLog category filter", () => {
+  const FIRE = makeResolved({
+    id: "INC-FIRE",
+    category: "FIRE",
+    resolvedAt: "2026-10-03T08:00:00.000Z",
+  });
+  const MEDICAL = makeResolved({
+    id: "INC-MEDICAL",
+    category: "MEDICAL",
+    resolvedAt: "2026-10-02T08:00:00.000Z",
+  });
+  const FLOOD = makeResolved({
+    id: "INC-FLOOD",
+    category: "FLOOD",
+    resolvedAt: "2026-10-01T08:00:00.000Z",
+  });
+  const ALL_THREE = [FIRE, MEDICAL, FLOOD];
+
+  it("shows the full chip set with ALL pressed and lists every incident in resolvedAt order", () => {
+    render(<ResolvedLog incidents={ALL_THREE} query="" />);
+
+    for (const key of ["ALL", ...CATEGORY_KEYS]) {
+      expect(screen.getByTestId(`resolved-category-${key}`)).toBeTruthy();
+    }
+    expect(
+      screen.getByTestId("resolved-category-ALL").getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    // Category filtering must not disturb the resolvedAt-desc ordering.
+    const rows = rowIds();
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toContain("INC-FIRE");
+    expect(rows[1]).toContain("INC-MEDICAL");
+    expect(rows[2]).toContain("INC-FLOOD");
+  });
+
+  it("reports the clicked chip through onCategoryChange (controlled contract)", () => {
+    const onCategoryChange = vi.fn();
+    render(
+      <ResolvedLog
+        incidents={ALL_THREE}
+        query=""
+        onCategoryChange={onCategoryChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("resolved-category-MEDICAL"));
+    expect(onCategoryChange).toHaveBeenCalledWith("MEDICAL");
+    // The component is controlled — nothing narrows until ControlRoom
+    // feeds the new category back as a prop.
+    expect(rowIds()).toHaveLength(3);
+  });
+
+  it("shows only the incidents matching the category prop", () => {
+    render(<ResolvedLog incidents={ALL_THREE} query="" category="MEDICAL" />);
+
+    expect(
+      screen
+        .getByTestId("resolved-category-MEDICAL")
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      screen.getByTestId("resolved-category-ALL").getAttribute("aria-pressed"),
+    ).toBe("false");
+
+    const rows = rowIds();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain("INC-MEDICAL");
+  });
+
+  it("combines the category filter with the existing search", () => {
+    const { rerender } = render(
+      <ResolvedLog incidents={ALL_THREE} query="" category="FIRE" />,
+    );
+    expect(rowIds()).toHaveLength(1);
+
+    // Search narrowed INSIDE the Fire category: no match -> the distinct
+    // no-results state, not the genuine empty-history message.
+    rerender(
+      <ResolvedLog incidents={ALL_THREE} query="INC-MED" category="FIRE" />,
+    );
+    expect(
+      screen.getByText("No resolved incidents match your filters."),
+    ).toBeTruthy();
+    expect(screen.queryByText("No resolved incidents yet.")).toBeNull();
+
+    // Case-insensitive partial match inside the same category.
+    rerender(
+      <ResolvedLog incidents={ALL_THREE} query="inc-fire" category="FIRE" />,
+    );
+    const rows = rowIds();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain("INC-FIRE");
+  });
+
+  it("clearing the search preserves the selected category", () => {
+    const { rerender } = render(
+      <ResolvedLog incidents={ALL_THREE} query="zzz" category="FLOOD" />,
+    );
+    expect(
+      screen.getByText("No resolved incidents match your filters."),
+    ).toBeTruthy();
+
+    rerender(
+      <ResolvedLog incidents={ALL_THREE} query="" category="FLOOD" />,
+    );
+    expect(
+      screen.queryByText("No resolved incidents match your filters."),
+    ).toBeNull();
+
+    const rows = rowIds();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain("INC-FLOOD");
+  });
+
+  it("keeps the chips visible when filters exclude every row so one click resets", () => {
+    const onCategoryChange = vi.fn();
+    render(
+      <ResolvedLog
+        incidents={ALL_THREE}
+        query=""
+        category="CRIME"
+        onCategoryChange={onCategoryChange}
+      />,
+    );
+
+    expect(
+      screen.getByText("No resolved incidents match your filters."),
+    ).toBeTruthy();
+    expect(screen.queryByText("No resolved incidents yet.")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("resolved-category-ALL"));
+    expect(onCategoryChange).toHaveBeenCalledWith("ALL");
+  });
+
+  it("hides the chip row when there is no history and while loading", () => {
+    const { rerender } = render(<ResolvedLog incidents={[]} query="" />);
+    expect(screen.queryByTestId("resolved-category-ALL")).toBeNull();
+    expect(screen.getByText("No resolved incidents yet.")).toBeTruthy();
+
+    rerender(<ResolvedLog incidents={ALL_THREE} query="" loading />);
+    expect(screen.queryByTestId("resolved-category-ALL")).toBeNull();
+    expect(screen.getByRole("status")).toBeTruthy();
   });
 });
