@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { CATEGORIES, CATEGORY_KEYS } from "../lib/config";
+import { CATEGORIES } from "../lib/config";
 import ResolvedDetailModal, { formatResolvedDate } from "./ResolvedDetailModal";
 import Skeleton from "./Skeleton";
-
-// Same chip set as the ActiveQueue's category row (config stays the
-// single source of category metadata — see AGENTS.md).
-const FILTERS = ["ALL", ...CATEGORY_KEYS];
 
 // Epoch for anything without a usable resolvedAt (null/undefined/garbage)
 // so pre-contract records sort below timed ones without ever crashing the
@@ -19,7 +15,6 @@ export default function ResolvedLog({
   incidents,
   query,
   category = "ALL",
-  onCategoryChange = () => {},
   loading = false,
   error = null,
 }) {
@@ -69,32 +64,13 @@ export default function ResolvedLog({
   }, [resolved, query, category]);
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto px-1 pb-2">
-      {/* Category chips — ALWAYS rendered, exactly like the ActiveQueue's
-          filter row (which shows regardless of loading/empty/error state).
-          Gating them on resolved.length > 0 previously hid the filter
-          whenever the feed fell back to the sample data (which contains
-          no RESOLVED incidents) or while loading, while the Active tab
-          kept showing its identical row — the reported "missing UI".
-          Controlled by ControlRoom: clicking reports the intent, the
-          prop carries the state back down. */}
-      <div className="mb-3 flex gap-1 overflow-x-auto px-1">
-        {FILTERS.map((filter) => (
-          <button
-            key={filter}
-            onClick={() => onCategoryChange(filter)}
-            aria-pressed={category === filter}
-            data-testid={`resolved-category-${filter}`}
-            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors ${
-              category === filter
-                ? "border-transparent bg-ink text-bg"
-                : "border-border text-ink-dim hover:border-ink-dim"
-            }`}
-          >
-            {filter}
-          </button>
-        ))}
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1 pb-2">
+      {/* The category chip row is NOT rendered here — it lives in
+          ControlRoom's always-visible Resolved tab chrome (next to the
+          search input, outside this scroll container), so the filters
+          can never be scrolled or clipped away. This component only
+          owns the scrollable list + per-incident cards, filtered by
+          the `category` + `query` props. */}
       {loading && (
         <div
           role="status"

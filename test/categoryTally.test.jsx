@@ -10,14 +10,13 @@ vi.mock("../src/components/WeatherCard", () => ({ default: () => null }));
 vi.mock("../src/components/RiverLevelCard", () => ({ default: () => null }));
 vi.mock("../src/components/IncidentMap", () => ({ default: () => null }));
 vi.mock("../src/components/ActiveQueue", () => ({ default: () => null }));
-// ResolvedLog is stubbed, but the stub still surfaces the category
-// contract so ControlRoom's resolved-filter state can be wired-tested.
+// ResolvedLog is stubbed so the wiring test can read back the
+// category prop ControlRoom passes down. The chip row itself is now
+// rendered by ControlRoom (always-visible Resolved tab chrome) —
+// the wiring test clicks those real chips.
 vi.mock("../src/components/ResolvedLog", () => ({
-  default: ({ category, onCategoryChange }) => (
-    <div data-testid="resolved-log-mock">
-      <span>{category}</span>
-      <button onClick={() => onCategoryChange("FIRE")}>mock chip</button>
-    </div>
+  default: ({ category }) => (
+    <div data-testid="resolved-log-mock">{category}</div>
   ),
 }));
 vi.mock("../src/hooks/useWeatherRiver", () => ({
@@ -297,14 +296,13 @@ describe("ControlRoom wiring", () => {
 
     // Resolved history opens showing everything, even for a FLOOD
     // dispatcher — the agency default applies to the queue/map only.
-    expect(mock.textContent).toContain("ALL");
+    expect(mock.textContent).toBe("ALL");
 
     // Changing the resolved category round-trips through ControlRoom
-    // state and must NOT touch the shared activeFilter (the tally keeps
-    // showing only FLOOD cards).
-    fireEvent.click(screen.getByRole("button", { name: "mock chip" }));
-    expect(mock.textContent).toContain("FIRE");
-    expect(mock.textContent).not.toContain("ALL");
+    // state (the real chip row) and must NOT touch the shared
+    // activeFilter (the tally keeps showing only FLOOD cards).
+    fireEvent.click(screen.getByTestId("resolved-category-FIRE"));
+    expect(mock.textContent).toBe("FIRE");
     expect(visibleLabels(container)).toEqual([CATEGORIES.FLOOD.label]);
   });
 

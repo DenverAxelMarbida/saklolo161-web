@@ -5,7 +5,12 @@ import CategoryTally from "./CategoryTally";
 import IncidentMap from "./IncidentMap";
 import ActiveQueue from "./ActiveQueue";
 import ResolvedLog from "./ResolvedLog";
+import { CATEGORY_KEYS } from "../lib/config";
 import { useWeatherRiver } from "../hooks/useWeatherRiver";
+
+// Same chip set as the ActiveQueue's category row (config stays the
+// single source of category metadata — see AGENTS.md).
+const RESOLVED_FILTERS = ["ALL", ...CATEGORY_KEYS];
 
 export default function ControlRoom({
   incidents,
@@ -160,7 +165,7 @@ export default function ControlRoom({
             selectedIncidentId={selectedIncidentId}
           />
         ) : (
-          <div className="flex h-full flex-col">
+          <div className="flex h-full min-h-0 flex-col">
             <input
               type="text"
               value={resolvedQuery}
@@ -168,11 +173,34 @@ export default function ControlRoom({
               placeholder="Search resolved..."
               className="mb-3 w-full rounded-md border border-border bg-panel px-2.5 py-1.5 text-xs text-ink placeholder:text-ink-dim/50 focus:border-ink-dim focus:outline-none"
             />
+            {/* Category chips live HERE — in the always-visible Resolved
+                tab chrome next to the search input, outside ResolvedLog's
+                internal scroll container — so they render identically to
+                the ActiveQueue's row in every state (empty, loading,
+                error) and can never be scrolled or clipped away. Same
+                labels, styling, spacing, and aria-pressed behavior as the
+                Active tab. Controlled state: a click reports intent here. */}
+            <div className="mb-3 flex gap-1 overflow-x-auto px-1">
+              {RESOLVED_FILTERS.map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setResolvedCategory(filter)}
+                  aria-pressed={resolvedCategory === filter}
+                  data-testid={`resolved-category-${filter}`}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors ${
+                    resolvedCategory === filter
+                      ? "border-transparent bg-ink text-bg"
+                      : "border-border text-ink-dim hover:border-ink-dim"
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
             <ResolvedLog
               incidents={incidents}
               query={resolvedQuery}
               category={resolvedCategory}
-              onCategoryChange={setResolvedCategory}
               loading={loading}
               error={error}
             />

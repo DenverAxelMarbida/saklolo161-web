@@ -3,7 +3,6 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import ResolvedLog from "../src/components/ResolvedLog";
 import { formatResolvedDate } from "../src/components/ResolvedDetailModal";
 import { normalizeIncident } from "../src/lib/api";
-import { CATEGORY_KEYS } from "../src/lib/config";
 import {
   PRODUCTION_INCIDENTS,
   PRODUCTION_SERVED_ORDER,
@@ -34,7 +33,7 @@ function makeResolved(overrides = {}) {
 }
 
 // Incident-row buttons are the only ones whose text starts with "#"
-// (the #INC-id span) — excludes the category-filter chip row.
+// (the #INC-id span).
 function rowButtons() {
   return screen
     .getAllByRole("button")
@@ -283,15 +282,8 @@ describe("ResolvedLog category filter", () => {
   });
   const ALL_THREE = [FIRE, MEDICAL, FLOOD];
 
-  it("shows the full chip set with ALL pressed and lists every incident in resolvedAt order", () => {
+  it("lists every incident in resolvedAt order (category filter state lives in ControlRoom)", () => {
     render(<ResolvedLog incidents={ALL_THREE} query="" />);
-
-    for (const key of ["ALL", ...CATEGORY_KEYS]) {
-      expect(screen.getByTestId(`resolved-category-${key}`)).toBeTruthy();
-    }
-    expect(
-      screen.getByTestId("resolved-category-ALL").getAttribute("aria-pressed"),
-    ).toBe("true");
 
     // Category filtering must not disturb the resolvedAt-desc ordering.
     const rows = rowIds();
@@ -301,34 +293,8 @@ describe("ResolvedLog category filter", () => {
     expect(rows[2]).toContain("INC-FLOOD");
   });
 
-  it("reports the clicked chip through onCategoryChange (controlled contract)", () => {
-    const onCategoryChange = vi.fn();
-    render(
-      <ResolvedLog
-        incidents={ALL_THREE}
-        query=""
-        onCategoryChange={onCategoryChange}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId("resolved-category-MEDICAL"));
-    expect(onCategoryChange).toHaveBeenCalledWith("MEDICAL");
-    // The component is controlled — nothing narrows until ControlRoom
-    // feeds the new category back as a prop.
-    expect(rowIds()).toHaveLength(3);
-  });
-
   it("shows only the incidents matching the category prop", () => {
     render(<ResolvedLog incidents={ALL_THREE} query="" category="MEDICAL" />);
-
-    expect(
-      screen
-        .getByTestId("resolved-category-MEDICAL")
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
-    expect(
-      screen.getByTestId("resolved-category-ALL").getAttribute("aria-pressed"),
-    ).toBe("false");
 
     const rows = rowIds();
     expect(rows).toHaveLength(1);
@@ -380,48 +346,13 @@ describe("ResolvedLog category filter", () => {
     expect(rows[0]).toContain("INC-FLOOD");
   });
 
-  it("keeps the chips visible when filters exclude every row so one click resets", () => {
-    const onCategoryChange = vi.fn();
-    render(
-      <ResolvedLog
-        incidents={ALL_THREE}
-        query=""
-        category="CRIME"
-        onCategoryChange={onCategoryChange}
-      />,
-    );
+  it("shows the distinct no-results state when filters exclude every row", () => {
+    render(<ResolvedLog incidents={ALL_THREE} query="" category="CRIME" />);
 
     expect(
       screen.getByText("No resolved incidents match your filters."),
     ).toBeTruthy();
     expect(screen.queryByText("No resolved incidents yet.")).toBeNull();
-
-    fireEvent.click(screen.getByTestId("resolved-category-ALL"));
-    expect(onCategoryChange).toHaveBeenCalledWith("ALL");
-  });
-
-  it("keeps the chip row visible when history is empty and while loading (Active-tab parity)", () => {
-    // Regression test for the reported bug: ActiveQueue renders its
-    // identical chip row unconditionally, so the Resolved tab must too —
-    // the cold-start/error fallback feed has no RESOLVED incidents, and
-    // the filter previously vanished in exactly that state.
-    const { rerender } = render(<ResolvedLog incidents={[]} query="" />);
-    expect(screen.getByTestId("resolved-category-ALL")).toBeTruthy();
-    expect(screen.getByText("No resolved incidents yet.")).toBeTruthy();
-
-    rerender(<ResolvedLog incidents={ALL_THREE} query="" loading />);
-    expect(screen.getByTestId("resolved-category-ALL")).toBeTruthy();
-    expect(screen.getByRole("status")).toBeTruthy();
-
-    rerender(
-      <ResolvedLog
-        incidents={[]}
-        query=""
-        error={new Error("network down")}
-      />,
-    );
-    expect(screen.getByTestId("resolved-category-ALL")).toBeTruthy();
-    expect(screen.getByText(/couldn't load resolved incidents/i)).toBeTruthy();
   });
 
   it("filters correctly for every category (MEDICAL, FIRE, FLOOD, CRIME)", () => {
