@@ -45,13 +45,13 @@ beforeEach(() => {
 });
 
 describe("password policy (web mirror)", () => {
-  it("accepts exactly 16 characters with every rule satisfied", () => {
-    expect(isStrongPassword("Ab1!Ab1!Ab1!Ab1!")).toBe(true);
-    expect(passwordFailures("Ab1!Ab1!Ab1!Ab1!")).toEqual([]);
+  it("accepts exactly 8 characters with every rule satisfied", () => {
+    expect(isStrongPassword("Ab1!ab12")).toBe(true);
+    expect(passwordFailures("Ab1!ab12")).toEqual([]);
   });
 
   it.each([
-    ["too short", "Sh0rt!Pass"],
+    ["too short", "Sh0rt!A"],
     ["no lowercase", "AAAAAAA1!AAAAAAAA"],
     ["no uppercase", "aaaaaaa1!aaaaaaaa"],
     ["no number", "Abc!Abc!Abc!Abc!A"],
@@ -74,7 +74,7 @@ describe("password policy (web mirror)", () => {
 });
 
 describe("Header — Change Password access", () => {
-  it("no longer offers Change Password or User Management to an admin", () => {
+  it("no longer offers Change Password or Account Management to an admin", () => {
     render(
       <Header
         dutyOfficer="admin@marikina.gov.ph"
@@ -85,7 +85,7 @@ describe("Header — Change Password access", () => {
     );
 
     expect(screen.queryByText("Change Password")).toBeNull();
-    expect(screen.queryByText("User Management")).toBeNull();
+    expect(screen.queryByText("Account Management")).toBeNull();
     // Settings is now the single entry point for both.
     expect(screen.getByLabelText("Settings")).toBeTruthy();
     expect(screen.getByText("Logout")).toBeTruthy();
@@ -102,7 +102,7 @@ describe("Header — Change Password access", () => {
     );
 
     expect(screen.queryByText("Change Password")).toBeNull();
-    expect(screen.queryByText("User Management")).toBeNull();
+    expect(screen.queryByText("Account Management")).toBeNull();
     expect(screen.getByText("Logout")).toBeTruthy();
   });
 
@@ -114,7 +114,7 @@ describe("Header — Change Password access", () => {
     expect(screen.getByLabelText("Current Password")).toBeTruthy();
     expect(screen.getByLabelText("New Password")).toBeTruthy();
     expect(screen.getByLabelText("Confirm New Password")).toBeTruthy();
-    expect(screen.getByText("At least 16 characters")).toBeTruthy();
+    expect(screen.getByText("At least 8 characters")).toBeTruthy();
     expect(screen.getByText("One special character")).toBeTruthy();
   });
 });

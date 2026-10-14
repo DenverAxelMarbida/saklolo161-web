@@ -56,6 +56,7 @@ vi.mock("../src/lib/api", () => ({
   createUser: vi.fn(),
   updateUser: vi.fn(),
   setUserEnabled: vi.fn(),
+  adminSetUserPassword: vi.fn(),
   changeOwnPassword: vi.fn(),
   listStations: vi.fn(),
   getStation: vi.fn(),
@@ -118,7 +119,7 @@ describe("Header — Settings gear button", () => {
     // Redundant controls are gone from the header — Settings is the single
     // entry point for both (asserted below, not duplicated here).
     expect(screen.queryByText("Change Password")).toBeNull();
-    expect(screen.queryByText("User Management")).toBeNull();
+    expect(screen.queryByText("Account Management")).toBeNull();
 
     fireEvent.click(gear);
     expect(onNavigate).toHaveBeenCalledWith("settings");
@@ -161,7 +162,7 @@ describe("Header — Settings gear button", () => {
 
     fireEvent.click(screen.getByLabelText("Settings"));
     expect(onNavigate).toHaveBeenCalledWith("settings");
-    expect(screen.queryByText("User Management")).toBeNull();
+    expect(screen.queryByText("Account Management")).toBeNull();
     expect(screen.queryByText("Change Password")).toBeNull();
     expect(screen.getByText("Logout")).toBeTruthy();
   });
@@ -232,48 +233,48 @@ describe("Settings view", () => {
     expect(screen.getByLabelText("Current Password")).toBeTruthy();
   });
 
-  it("admin gets a User Management tab inside Settings that opens the existing component inline", async () => {
+  it("admin gets an Account Management tab inside Settings that opens the existing component inline", async () => {
     const onNavigate = vi.fn();
     render(<Settings user={adminUser} onNavigate={onNavigate} />);
 
     // The section is reachable as a Settings tab — no card, no redirect.
     expect(screen.getByRole("tab", { name: "My Account" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "User Management" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Account Management" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "My Account" })).toBeTruthy();
-    expect(screen.queryByText("Add User")).toBeNull();
+    expect(screen.queryByText("Add Account")).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "User Management" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Account Management" }));
 
     // The EXISTING UserManagement component renders inside Settings.
-    expect(await screen.findByText("Add User")).toBeTruthy();
+    expect(await screen.findByText("Add Account")).toBeTruthy();
     expect(
-      screen.getByRole("heading", { name: "User Management" }),
+      screen.getByRole("heading", { name: "Account Management" }),
     ).toBeTruthy();
     // Stays in Settings — never navigates to a separate view.
     expect(onNavigate).not.toHaveBeenCalled();
     expect(screen.queryByText("Back to Control Room")).toBeTruthy();
   });
 
-  it("admin: initialSection=\"users\" opens Settings directly on the User Management tab", async () => {
+  it("admin: initialSection=\"users\" opens Settings directly on the Account Management tab", async () => {
     render(
       <Settings user={adminUser} onNavigate={() => {}} initialSection="users" />,
     );
 
     expect(
-      screen.getByRole("tab", { name: "User Management" }).getAttribute("aria-selected"),
+      screen.getByRole("tab", { name: "Account Management" }).getAttribute("aria-selected"),
     ).toBe("true");
-    expect(await screen.findByText("Add User")).toBeTruthy();
+    expect(await screen.findByText("Add Account")).toBeTruthy();
   });
 
-  it("dispatcher does NOT see any User Management option", () => {
+  it("dispatcher does NOT see any Account Management option", () => {
     const onNavigate = vi.fn();
     const { container } = render(
       <Settings user={dispatcherUser} onNavigate={onNavigate} />,
     );
 
-    expect(screen.queryByRole("tab", { name: "User Management" })).toBeNull();
-    expect(within(container).queryByText("User Management")).toBeNull();
-    expect(within(container).queryByText("Open User Management")).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Account Management" })).toBeNull();
+    expect(within(container).queryByText("Account Management")).toBeNull();
+    expect(within(container).queryByText("Open Account Management")).toBeNull();
     expect(onNavigate).not.toHaveBeenCalledWith("users");
   });
 
@@ -362,18 +363,18 @@ describe("App — Settings view switching", () => {
     expect(screen.getByRole("main").classList.contains("animate-view-in")).toBe(true);
   });
 
-  it("dispatcher: no User Management entry point anywhere in Settings", () => {
+  it("dispatcher: no Account Management entry point anywhere in Settings", () => {
     render(<App />);
     fireEvent.click(screen.getByLabelText("Settings"));
 
     const main = screen.getByRole("main");
-    expect(within(main).queryByText("User Management")).toBeNull();
-    expect(within(main).queryByText("Open User Management")).toBeNull();
+    expect(within(main).queryByText("Account Management")).toBeNull();
+    expect(within(main).queryByText("Open Account Management")).toBeNull();
     // The header only offers admin controls to admins.
-    expect(screen.queryByText("User Management")).toBeNull();
+    expect(screen.queryByText("Account Management")).toBeNull();
   });
 
-  it("admin: gear to Settings -> User Management tab inline -> Back to Control Room", async () => {
+  it("admin: gear to Settings -> Account Management tab inline -> Back to Control Room", async () => {
     authState.payload = { token: "test-token", user: adminUser };
     render(<App />);
 
@@ -382,12 +383,12 @@ describe("App — Settings view switching", () => {
     let main = screen.getByRole("main");
     expect(within(main).getByRole("heading", { name: "Settings" })).toBeTruthy();
     expect(within(main).getByText("admin@marikina.gov.ph")).toBeTruthy();
-    expect(within(main).getByRole("tab", { name: "User Management" })).toBeTruthy();
+    expect(within(main).getByRole("tab", { name: "Account Management" })).toBeTruthy();
 
     // Switching tabs opens the EXISTING UserManagement component INSIDE
     // Settings — no separate view, no redirect.
-    fireEvent.click(within(main).getByRole("tab", { name: "User Management" }));
-    expect(await within(main).findByText("Add User")).toBeTruthy();
+    fireEvent.click(within(main).getByRole("tab", { name: "Account Management" }));
+    expect(await within(main).findByText("Add Account")).toBeTruthy();
     expect(
       within(main).getByRole("heading", { name: "Settings" }),
     ).toBeTruthy();
@@ -452,7 +453,7 @@ describe("View transition — CSS contract", () => {
 });
 
 describe("Settings — Policies tab", () => {
-  it("dispatcher sees a Policies tab but no User Management option", () => {
+  it("dispatcher sees a Policies tab but no Account Management option", () => {
     const onNavigate = vi.fn();
     render(<Settings user={dispatcherUser} onNavigate={onNavigate} />);
 
@@ -460,17 +461,17 @@ describe("Settings — Policies tab", () => {
       screen.getByRole("tab", { name: "Policies" }),
     ).toBeTruthy();
     expect(screen.getByRole("tab", { name: "My Account" })).toBeTruthy();
-    expect(screen.queryByRole("tab", { name: "User Management" })).toBeNull();
-    expect(screen.queryByText("User Management")).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Account Management" })).toBeNull();
+    expect(screen.queryByText("Account Management")).toBeNull();
   });
 
-  it("admin sees Policies alongside My Account and User Management", () => {
+  it("admin sees Policies alongside My Account and Account Management", () => {
     const onNavigate = vi.fn();
     render(<Settings user={adminUser} onNavigate={onNavigate} />);
 
     expect(screen.getByRole("tab", { name: "My Account" })).toBeTruthy();
     expect(
-      screen.getByRole("tab", { name: "User Management" }),
+      screen.getByRole("tab", { name: "Account Management" }),
     ).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Policies" })).toBeTruthy();
   });
@@ -510,7 +511,7 @@ describe("Settings — Policies tab", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: "Policies" }));
 
-    expect(within(container).queryByText("User Management")).toBeNull();
+    expect(within(container).queryByText("Account Management")).toBeNull();
     expect(listUsers).not.toHaveBeenCalled();
   });
 

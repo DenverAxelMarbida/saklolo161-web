@@ -8,6 +8,7 @@ import {
   createUser,
   updateUser,
   setUserEnabled,
+  adminSetUserPassword,
   changeOwnPassword,
   listStations,
   getStation,
@@ -453,11 +454,36 @@ describe("user management endpoints", () => {
   it("setUserEnabled PATCHes /api/users/:uid/status with { enabled }", async () => {
     mockPatch.mockResolvedValue({ data: { success: true, data: { uid: "u1" } } });
 
-    await setUserEnabled("u1", false);
-    expect(mockPatch).toHaveBeenCalledWith("/api/users/u1/status", { enabled: false });
+    await setUserEnabled("u1", false, { adminPassword: "AdminPass!xK9pQ2" });
+    expect(mockPatch).toHaveBeenCalledWith("/api/users/u1/status", {
+      enabled: false,
+      adminPassword: "AdminPass!xK9pQ2",
+    });
 
     await setUserEnabled("u1", true);
     expect(mockPatch).toHaveBeenLastCalledWith("/api/users/u1/status", { enabled: true });
+  });
+
+  it("setUserEnabled never sends an adminPassword when enabling", async () => {
+    mockPatch.mockResolvedValue({ data: { success: true, data: { uid: "u1" } } });
+
+    await setUserEnabled("u1", true, { adminPassword: "AdminPass!xK9pQ2" });
+    expect(mockPatch).toHaveBeenCalledWith("/api/users/u1/status", { enabled: true });
+  });
+
+  it("adminSetUserPassword PATCHes /api/users/:uid/password with only the two password fields", async () => {
+    mockPatch.mockResolvedValue({
+      data: { success: true, message: "Password updated successfully." },
+    });
+
+    const payload = {
+      newPassword: "N3wSecure!Passw0rd!",
+      confirmNewPassword: "N3wSecure!Passw0rd!",
+    };
+    const result = await adminSetUserPassword("u1", payload);
+
+    expect(mockPatch).toHaveBeenCalledWith("/api/users/u1/password", payload);
+    expect(result.success).toBe(true);
   });
 
   it("changeOwnPassword POSTs /api/users/me/password with the three fields", async () => {

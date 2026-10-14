@@ -208,8 +208,29 @@ export const updateUser = async (uid, payload) => {
   return response.data;
 };
 
-export const setUserEnabled = async (uid, enabled) => {
-  const response = await api.patch(`/api/users/${uid}/status`, { enabled });
+// Disabling an account is sensitive: the backend requires the acting
+// admin's OWN current password (adminPassword) and re-verifies it
+// server-side before the account is disabled. Enabling (restoring
+// access) needs no password — omit the options object for that.
+export const setUserEnabled = async (uid, enabled, { adminPassword } = {}) => {
+  const body = { enabled };
+  if (enabled === false && adminPassword) {
+    body.adminPassword = adminPassword;
+  }
+  const response = await api.patch(`/api/users/${uid}/status`, body);
+  return response.data;
+};
+
+// Admin changes ANOTHER account's password (backend:
+// PATCH /api/users/:uid/password — verifyAuth + requireAdmin).
+// Only the new password + confirmation are sent; authorization is
+// the verified admin session, no admin-password reauthentication.
+// Neither password is ever logged or persisted anywhere.
+export const adminSetUserPassword = async (uid, { newPassword, confirmNewPassword }) => {
+  const response = await api.patch(`/api/users/${uid}/password`, {
+    newPassword,
+    confirmNewPassword,
+  });
   return response.data;
 };
 
