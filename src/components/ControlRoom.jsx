@@ -31,6 +31,11 @@ export default function ControlRoom({
   );
   const [queueView, setQueueView] = useState("active");
   const [resolvedQuery, setResolvedQuery] = useState("");
+  // The Resolved tab's category filter is deliberately SEPARATE from the
+  // shared activeFilter (queue/map/tally): switching the resolved chip
+  // must not re-filter the live desk behind the dispatcher's back, and
+  // resolved history opens showing everything (ALL) regardless of agency.
+  const [resolvedCategory, setResolvedCategory] = useState("ALL");
   const {
     weather,
     river,
@@ -166,6 +171,8 @@ export default function ControlRoom({
             <ResolvedLog
               incidents={incidents}
               query={resolvedQuery}
+              category={resolvedCategory}
+              onCategoryChange={setResolvedCategory}
               loading={loading}
               error={error}
             />

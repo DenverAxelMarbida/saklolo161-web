@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { CATEGORIES } from "../lib/config";
+import { CATEGORIES, CATEGORY_KEYS } from "../lib/config";
 import ResolvedDetailModal, { formatResolvedDate } from "./ResolvedDetailModal";
 import Skeleton from "./Skeleton";
+
+// Same chip set as the ActiveQueue's category row (config stays the
+// single source of category metadata — see AGENTS.md).
+const FILTERS = ["ALL", ...CATEGORY_KEYS];
 
 // Epoch for anything without a usable resolvedAt (null/undefined/garbage)
 // so pre-contract records sort below timed ones without ever crashing the
@@ -11,7 +15,14 @@ function resolvedTime(incident) {
   return Number.isFinite(t) ? t : 0;
 }
 
-export default function ResolvedLog({ incidents, query, loading = false, error = null }) {
+export default function ResolvedLog({
+  incidents,
+  query,
+  category = "ALL",
+  onCategoryChange = () => {},
+  loading = false,
+  error = null,
+}) {
   const [selectedIncident, setSelectedIncident] = useState(null);
 
   // Keep the open modal pointed at the freshest polled copy of that
@@ -38,16 +49,24 @@ export default function ResolvedLog({ incidents, query, loading = false, error =
     [incidents],
   );
 
+  // Category filter (from the Resolved tab's chip row) narrows the list
+  // first; the existing search semantics then run unchanged over id,
+  // location, and category. Both must match — the sort above is never
+  // re-derived here, only the working list is narrowed.
   const filtered = useMemo(() => {
-    if (!query) return resolved;
+    const byCategory =
+      category === "ALL"
+        ? resolved
+        : resolved.filter((i) => i.category === category);
+    if (!query) return byCategory;
     const q = query.toLowerCase();
-    return resolved.filter(
+    return byCategory.filter(
       (i) =>
         i.id.toLowerCase().includes(q) ||
         i.location.toLowerCase().includes(q) ||
         i.category.toLowerCase().includes(q),
     );
-  }, [resolved, query]);
+  }, [resolved, query, category]);
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto px-1 pb-2">
@@ -69,6 +88,29 @@ export default function ResolvedLog({ incidents, query, loading = false, error =
           ))}
         </div>
       )}
+      {/* Category chips — only once there is history to filter (hidden
+          during load/error/empty, matching the list's visibility rules).
+          Controlled by ControlRoom: clicking reports the intent, the prop
+          carries the state back down. */}
+      {!loading && resolved.length > 0 && (
+        <div className="mb-3 flex gap-1 overflow-x-auto px-1">
+          {FILTERS.map((filter) => (
+            <button
+              key={filter}
+              onClick={() => onCategoryChange(filter)}
+              aria-pressed={category === filter}
+              data-testid={`resolved-category-${filter}`}
+              className={`rounded-full border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors ${
+                category === filter
+                  ? "border-transparent bg-ink text-bg"
+                  : "border-border text-ink-dim hover:border-ink-dim"
+              }`}
+            >
+              {filter}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Only a completed, successful load may claim emptiness — a failed
           fetch is an error state, never "no resolved incidents yet". */}
       {!loading && error && resolved.length === 0 && (
@@ -76,7 +118,7 @@ export default function ResolvedLog({ incidents, query, loading = false, error =
           Couldn't load resolved incidents. The live feed is unavailable.
         </div>
       )}
-      {!loading && (resolved.length > 0 || !error) && filtered.length === 0 && (
+      {!loading && !error && resolved.length === 0 && (
         <div className="mt-6 rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-ink-dim">
           <svg
             aria-hidden="true"
@@ -91,6 +133,27 @@ export default function ResolvedLog({ incidents, query, loading = false, error =
             <path d="M20 6 9 17l-5-5" />
           </svg>
           No resolved incidents yet.
+        </div>
+      )}
+      {/* History exists but the category/search filters exclude every
+          row — distinct from "no history yet", and the chips stay
+          visible above so the dispatcher can reset in one click. */}
+      {!loading && resolved.length > 0 && filtered.length === 0 && (
+        <div className="mt-6 rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-ink-dim">
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="mx-auto mb-2 h-6 w-6"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          No resolved incidents match your filters.
         </div>
       )}
       {!loading &&

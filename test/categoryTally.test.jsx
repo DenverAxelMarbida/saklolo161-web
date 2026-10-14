@@ -10,7 +10,16 @@ vi.mock("../src/components/WeatherCard", () => ({ default: () => null }));
 vi.mock("../src/components/RiverLevelCard", () => ({ default: () => null }));
 vi.mock("../src/components/IncidentMap", () => ({ default: () => null }));
 vi.mock("../src/components/ActiveQueue", () => ({ default: () => null }));
-vi.mock("../src/components/ResolvedLog", () => ({ default: () => null }));
+// ResolvedLog is stubbed, but the stub still surfaces the category
+// contract so ControlRoom's resolved-filter state can be wired-tested.
+vi.mock("../src/components/ResolvedLog", () => ({
+  default: ({ category, onCategoryChange }) => (
+    <div data-testid="resolved-log-mock">
+      <span>{category}</span>
+      <button onClick={() => onCategoryChange("FIRE")}>mock chip</button>
+    </div>
+  ),
+}));
 vi.mock("../src/hooks/useWeatherRiver", () => ({
   useWeatherRiver: () => ({ weather: null, river: null, loading: false }),
 }));
@@ -272,6 +281,31 @@ describe("ControlRoom wiring", () => {
     expect(
       screen.getByRole("button", { name: "Resolved" }).getAttribute("aria-pressed"),
     ).toBe("false");
+  });
+
+  it("wires a resolved-category filter that is independent of the shared queue/map filter", () => {
+    const { container } = render(
+      <ControlRoom
+        incidents={[]}
+        onSelectIncident={() => {}}
+        initialAgency="FLOOD"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Resolved" }));
+    const mock = screen.getByTestId("resolved-log-mock");
+
+    // Resolved history opens showing everything, even for a FLOOD
+    // dispatcher — the agency default applies to the queue/map only.
+    expect(mock.textContent).toContain("ALL");
+
+    // Changing the resolved category round-trips through ControlRoom
+    // state and must NOT touch the shared activeFilter (the tally keeps
+    // showing only FLOOD cards).
+    fireEvent.click(screen.getByRole("button", { name: "mock chip" }));
+    expect(mock.textContent).toContain("FIRE");
+    expect(mock.textContent).not.toContain("ALL");
+    expect(visibleLabels(container)).toEqual([CATEGORIES.FLOOD.label]);
   });
 
   it("shows an alert with a working Retry when the incident feed failed to load", () => {
