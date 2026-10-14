@@ -70,6 +70,31 @@ export default function ResolvedLog({
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto px-1 pb-2">
+      {/* Category chips — ALWAYS rendered, exactly like the ActiveQueue's
+          filter row (which shows regardless of loading/empty/error state).
+          Gating them on resolved.length > 0 previously hid the filter
+          whenever the feed fell back to the sample data (which contains
+          no RESOLVED incidents) or while loading, while the Active tab
+          kept showing its identical row — the reported "missing UI".
+          Controlled by ControlRoom: clicking reports the intent, the
+          prop carries the state back down. */}
+      <div className="mb-3 flex gap-1 overflow-x-auto px-1">
+        {FILTERS.map((filter) => (
+          <button
+            key={filter}
+            onClick={() => onCategoryChange(filter)}
+            aria-pressed={category === filter}
+            data-testid={`resolved-category-${filter}`}
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors ${
+              category === filter
+                ? "border-transparent bg-ink text-bg"
+                : "border-border text-ink-dim hover:border-ink-dim"
+            }`}
+          >
+            {filter}
+          </button>
+        ))}
+      </div>
       {loading && (
         <div
           role="status"
@@ -85,29 +110,6 @@ export default function ResolvedLog({
               <Skeleton className="mt-2 h-4 w-3/4" />
               <Skeleton className="mt-2 h-4 w-1/3" />
             </div>
-          ))}
-        </div>
-      )}
-      {/* Category chips — only once there is history to filter (hidden
-          during load/error/empty, matching the list's visibility rules).
-          Controlled by ControlRoom: clicking reports the intent, the prop
-          carries the state back down. */}
-      {!loading && resolved.length > 0 && (
-        <div className="mb-3 flex gap-1 overflow-x-auto px-1">
-          {FILTERS.map((filter) => (
-            <button
-              key={filter}
-              onClick={() => onCategoryChange(filter)}
-              aria-pressed={category === filter}
-              data-testid={`resolved-category-${filter}`}
-              className={`rounded-full border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors ${
-                category === filter
-                  ? "border-transparent bg-ink text-bg"
-                  : "border-border text-ink-dim hover:border-ink-dim"
-              }`}
-            >
-              {filter}
-            </button>
           ))}
         </div>
       )}
