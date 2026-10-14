@@ -400,13 +400,56 @@ describe("ResolvedLog category filter", () => {
     expect(onCategoryChange).toHaveBeenCalledWith("ALL");
   });
 
-  it("hides the chip row when there is no history and while loading", () => {
+  it("keeps the chip row visible when history is empty and while loading (Active-tab parity)", () => {
+    // Regression test for the reported bug: ActiveQueue renders its
+    // identical chip row unconditionally, so the Resolved tab must too —
+    // the cold-start/error fallback feed has no RESOLVED incidents, and
+    // the filter previously vanished in exactly that state.
     const { rerender } = render(<ResolvedLog incidents={[]} query="" />);
-    expect(screen.queryByTestId("resolved-category-ALL")).toBeNull();
+    expect(screen.getByTestId("resolved-category-ALL")).toBeTruthy();
     expect(screen.getByText("No resolved incidents yet.")).toBeTruthy();
 
     rerender(<ResolvedLog incidents={ALL_THREE} query="" loading />);
-    expect(screen.queryByTestId("resolved-category-ALL")).toBeNull();
+    expect(screen.getByTestId("resolved-category-ALL")).toBeTruthy();
     expect(screen.getByRole("status")).toBeTruthy();
+
+    rerender(
+      <ResolvedLog
+        incidents={[]}
+        query=""
+        error={new Error("network down")}
+      />,
+    );
+    expect(screen.getByTestId("resolved-category-ALL")).toBeTruthy();
+    expect(screen.getByText(/couldn't load resolved incidents/i)).toBeTruthy();
+  });
+
+  it("filters correctly for every category (MEDICAL, FIRE, FLOOD, CRIME)", () => {
+    const CRIME = makeResolved({
+      id: "INC-CRIME",
+      category: "CRIME",
+      resolvedAt: "2026-09-30T08:00:00.000Z",
+    });
+    const everything = [FIRE, MEDICAL, FLOOD, CRIME];
+
+    const cases = [
+      ["MEDICAL", "INC-MEDICAL"],
+      ["FIRE", "INC-FIRE"],
+      ["FLOOD", "INC-FLOOD"],
+      ["CRIME", "INC-CRIME"],
+    ];
+    for (const [cat, id] of cases) {
+      const { unmount } = render(
+        <ResolvedLog incidents={everything} query="" category={cat} />,
+      );
+      const rows = rowIds();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toContain(id);
+      unmount();
+    }
+
+    // ALL restores every resolved incident.
+    render(<ResolvedLog incidents={everything} query="" category="ALL" />);
+    expect(rowIds()).toHaveLength(4);
   });
 });
