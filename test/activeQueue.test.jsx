@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import ActiveQueue from "../src/components/ActiveQueue";
 
 function makeIncident(overrides = {}) {
@@ -10,6 +10,7 @@ function makeIncident(overrides = {}) {
     priority: "MEDIUM",
     location: "Marikina City",
     coords: { lat: 14.65, lng: 121.1 },
+    elapsedMinutes: 10,
     callerNotes: "Water rising near the bridge.",
     evidence: [],
     evidenceUploading: false,
@@ -229,5 +230,166 @@ describe("ActiveQueue — long values", () => {
 
     expect(screen.getByText("CRIME")).toBeTruthy();
     expect(screen.getByText("DISPATCHED")).toBeTruthy();
+  });
+});
+
+describe("ActiveQueue — newest-first ordering", () => {
+  const cardIds = (container) =>
+    [...container.querySelectorAll("button.w-full")].map(
+      (button) => button.querySelector("span.font-mono")?.textContent,
+    );
+
+  function renderFullQueue(incidents, extra = {}) {
+    return render(
+      <ActiveQueue
+        incidents={incidents}
+        onSelectIncident={() => {}}
+        activeFilter="ALL"
+        onFilterChange={() => {}}
+        {...extra}
+      />,
+    );
+  }
+
+  it("lists newest incidents first by elapsed minutes", () => {
+    const { container } = renderFullQueue([
+      makeIncident({ id: "OLD", elapsedMinutes: 30 }),
+      makeIncident({ id: "NEW", elapsedMinutes: 2 }),
+      makeIncident({ id: "MID", elapsedMinutes: 14 }),
+    ]);
+
+    expect(cardIds(container)).toEqual(["#NEW", "#MID", "#OLD"]);
+  });
+
+  it("sinks unknown or invalid ages below timed incidents", () => {
+    const { container } = renderFullQueue([
+      makeIncident({ id: "NO-AGE", elapsedMinutes: undefined }),
+      makeIncident({ id: "TIMED", elapsedMinutes: 5 }),
+      makeIncident({ id: "NAN-AGE", elapsedMinutes: NaN }),
+    ]);
+
+    expect(cardIds(container)).toEqual(["#TIMED", "#NO-AGE", "#NAN-AGE"]);
+  });
+
+  it("never mutates the parent's incidents array", () => {
+    const incidents = Object.freeze([
+      makeIncident({ id: "OLD", elapsedMinutes: 30 }),
+      makeIncident({ id: "NEW", elapsedMinutes: 2 }),
+    ]);
+
+    const { container } = renderFullQueue(incidents);
+
+    expect(cardIds(container)).toEqual(["#NEW", "#OLD"]);
+    expect(incidents[0].id).toBe("OLD");
+  });
+
+  it("a newly polled incident appears at the top without remounting", () => {
+    const oldList = [
+      makeIncident({ id: "OLD", elapsedMinutes: 30 }),
+      makeIncident({ id: "MID", elapsedMinutes: 14 }),
+    ];
+    const { container, rerender } = renderFullQueue(oldList);
+    expect(cardIds(container)).toEqual(["#MID", "#OLD"]);
+
+    // Next poll: a fresh report arrives (and ages recompute).
+    rerender(
+      <ActiveQueue
+        incidents={[
+          makeIncident({ id: "FRESH", elapsedMinutes: 0 }),
+          ...oldList,
+        ]}
+        onSelectIncident={() => {}}
+        activeFilter="ALL"
+        onFilterChange={() => {}}
+      />,
+    );
+
+    expect(cardIds(container)).toEqual(["#FRESH", "#MID", "#OLD"]);
+  });
+
+  it("keeps filtering, resolved-exclusion, and pending counts correct with sorting", () => {
+    const { container } = render(
+      <ActiveQueue
+        incidents={[
+          makeIncident({ id: "F-OLD", category: "FLOOD", elapsedMinutes: 40 }),
+          makeIncident({ id: "C-NEW", category: "CRIME", elapsedMinutes: 1 }),
+          makeIncident({ id: "DONE", status: "RESOLVED", elapsedMinutes: 0 }),
+        ]}
+        onSelectIncident={() => {}}
+        activeFilter="FLOOD"
+        onFilterChange={() => {}}
+      />,
+    );
+
+    // Resolved never renders; filter narrows; count covers all pending.
+    expect(cardIds(container)).toEqual(["#F-OLD"]);
+    expect(screen.getByText("2 Pending")).toBeTruthy();
+    expect(screen.queryByText("#DONE")).toBeNull();
+  });
+});
+
+describe("ActiveQueue — scroll chain and selection stability", () => {
+  const queueList = (container) =>
+    container.querySelector(".overflow-y-auto:not(.overflow-x-auto)");
+
+  it("gives the queue a shrinkable flex chain and a vertical-only scroll region", () => {
+    const { container } = render(
+      <ActiveQueue
+        incidents={[makeIncident()]}
+        onSelectIncident={() => {}}
+        activeFilter="ALL"
+        onFilterChange={() => {}}
+      />,
+    );
+
+    // The flex-column root must shrink below content height or the
+    // rail's overflow-hidden hard-clips the tail with no scrollbar.
+    const root = container.firstChild;
+    expect(root.className).toMatch(/min-h-0/);
+
+    // The list itself scrolls vertically only, with bottom clearance
+    // so the final card never rests flush against the panel edge.
+    const list = queueList(container);
+    expect(list.className).toMatch(/overflow-y-auto/);
+    expect(list.className).not.toMatch(/overflow-x-auto|overflow-x-scroll/);
+    expect(list.className).toMatch(/pb-2/);
+  });
+
+  it("selecting the last card neither scrolls ancestors nor resets the queue", () => {
+    const onSelectIncident = vi.fn();
+    const { container } = render(
+      <ActiveQueue
+        incidents={[
+          makeIncident({ id: "FIRST", elapsedMinutes: 1 }),
+          makeIncident({ id: "LAST", elapsedMinutes: 60 }),
+        ]}
+        onSelectIncident={onSelectIncident}
+        activeFilter="ALL"
+        onFilterChange={() => {}}
+        selectedIncidentId="LAST"
+      />,
+    );
+
+    const list = queueList(container);
+    list.scrollTop = 123;
+    const pageTop = document.documentElement.scrollTop;
+
+    const lastCard = screen.getByText("#LAST").closest("button");
+    fireEvent.click(lastCard);
+    expect(onSelectIncident).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "LAST" }),
+    );
+
+    // No programmatic scrolling: the queue, page, and map positions
+    // are untouched by selection…
+    expect(list.scrollTop).toBe(123);
+    expect(document.documentElement.scrollTop).toBe(pageTop);
+
+    // …and repeated selection keeps everything stable with the
+    // highlight intact.
+    fireEvent.click(lastCard);
+    expect(list.scrollTop).toBe(123);
+    expect(lastCard.getAttribute("data-selected")).toBe("true");
+    expect(lastCard.className).toMatch(/ring-1/);
   });
 });
