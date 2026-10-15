@@ -10,6 +10,15 @@ const STATUS_STYLES = {
   "EN ROUTE": "text-risk-mid border-risk-mid/40",
 };
 
+// Newest-first: elapsedMinutes counts UP from the report time, so
+// ascending age = descending recency. Mirrors ResolvedLog's
+// epoch-fallback pattern: unknown/invalid ages sink below timed ones
+// instead of crashing the comparator or jumping to the top as "0m".
+const ageMinutes = (incident) =>
+  Number.isFinite(incident?.elapsedMinutes) ? incident.elapsedMinutes : Infinity;
+
+const byNewestFirst = (a, b) => ageMinutes(a) - ageMinutes(b);
+
 // Skeleton rows mirroring a queue card's shape (id/time line, location,
 // status line) so the list doesn't jump when the first fetch lands.
 function QueueSkeleton() {
@@ -43,8 +52,13 @@ export default function ActiveQueue({
   error = null,
   selectedIncidentId = null,
 }) {
+  // Newest incidents first — the API returns oldest-first, and every
+  // poll re-renders with fresh data, so sorting here keeps new reports
+  // pinned to the top with no refresh and no extra requests. filter()
+  // already returns a fresh array, so the in-place sort below never
+  // mutates the parent's incidents prop.
   const pending = useMemo(
-    () => incidents.filter((i) => i.status !== "RESOLVED"),
+    () => incidents.filter((i) => i.status !== "RESOLVED").sort(byNewestFirst),
     [incidents],
   );
 
@@ -57,8 +71,14 @@ export default function ActiveQueue({
     return pending.filter((incident) => incident.category === activeFilter);
   }, [pending, activeFilter]);
 
+  // min-h-0 is load-bearing: without it this flex-column root
+  // cannot shrink below its content height, the inner list never gets
+  // a bounded box to scroll within, and the rail aside's
+  // overflow-hidden hard-clips every card past the viewport — with no
+  // scrollbar to reach them. (Same pattern as the Resolved tab's
+  // container in ControlRoom.)
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between px-1">
         <h2 className="text-sm font-semibold">Active Queue</h2>
         <span className="rounded-full border border-border bg-panel px-2 py-0.5 text-xs text-ink-dim">
@@ -83,7 +103,10 @@ export default function ActiveQueue({
         ))}
       </div>
 
-      <div className="mt-3 flex-1 space-y-2 overflow-y-auto px-1 pb-2">
+      {/* The queue's own scroll region: bounded by the flex-1 above,
+          so it — and only it — scrolls. pb-2 keeps the final card off
+          the panel boundary; no horizontal scrolling is introduced. */}
+      <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto px-1 pb-2">
         {loading && <QueueSkeleton />}
         {/* Only a genuinely completed, successful load may claim emptiness;
             a failed first fetch is an error state, not an empty queue. */}
